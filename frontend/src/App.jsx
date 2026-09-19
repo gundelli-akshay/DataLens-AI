@@ -1,3 +1,4 @@
+﻿import { useState } from "react";
 import { useHealthCheck } from "./hooks/useHealthCheck";
 import Header from "./components/Header";
 import UploadZone from "./components/UploadZone";
@@ -7,6 +8,10 @@ import "./App.css";
 export default function App() {
   // Check if the FastAPI backend is reachable
   const apiStatus = useHealthCheck();
+
+  // Store last successful upload result.
+  // Will be passed to the analysis panel in a future step.
+  const [uploadedFile, setUploadedFile] = useState(null);
 
   return (
     <div className="app">
@@ -32,12 +37,12 @@ export default function App() {
         {/* ── Upload ────────────────────────────── */}
         <div className="card">
           <div className="card__label">Step 1 — Upload a file</div>
-          <UploadZone />
+          <UploadZone onUploadSuccess={setUploadedFile} />
         </div>
 
         {/* ── Results ───────────────────────────── */}
         <div className="card">
-          <ResultsPlaceholder />
+          <ResultsPlaceholder uploadedFile={uploadedFile} />
         </div>
       </main>
 

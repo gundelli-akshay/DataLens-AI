@@ -1,4 +1,4 @@
-# ─── Web Framework ────────────────────────────────────────────
+﻿# ─── Web Framework ────────────────────────────────────────────
 fastapi==0.115.12
 uvicorn[standard]==0.34.3
 
@@ -6,10 +6,12 @@ uvicorn[standard]==0.34.3
 pydantic-settings==2.9.1
 python-dotenv==1.1.0
 
+# ─── File Uploads ─────────────────────────────────────────────
+python-multipart==0.0.20
+
 # ─── Added as the project grows ───────────────────────────────
 # pandas
 # numpy
 # sqlalchemy
 # psycopg2-binary
-# python-multipart
 # openai

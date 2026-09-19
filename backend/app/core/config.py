@@ -1,9 +1,11 @@
-"""
-core/ — Application-wide configuration.
+﻿"""
+core/config.py — Application-wide configuration.
 
 Reads environment variables from .env using pydantic-settings.
 All other modules import from here instead of reading os.environ directly.
 """
+
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -31,6 +33,22 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",   # silently ignore unknown env vars
     )
+
+    @property
+    def upload_dir_path(self) -> Path:
+        """
+        Resolved absolute path to the uploads directory.
+
+        config.py lives at: backend/app/core/config.py
+        Project root is:    ../../../  (3 levels up)
+        Uploads dir is:     <project_root>/data/uploads
+
+        This works regardless of where uvicorn is started from.
+        """
+        project_root = Path(__file__).parent.parent.parent.parent
+        path = project_root / self.upload_dir
+        path.mkdir(parents=True, exist_ok=True)   # create if missing
+        return path
 
 
 # Single shared instance — import this everywhere

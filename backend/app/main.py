@@ -1,4 +1,4 @@
-"""
+﻿"""
 main.py — DataLens AI FastAPI application entry point.
 
 This file:
@@ -13,7 +13,7 @@ To run:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health
+from app.api import health, upload
 from app.core.config import settings
 
 # ─── App instance ─────────────────────────────────────────────
@@ -36,6 +36,7 @@ app.add_middleware(
 
 # ─── Routers ──────────────────────────────────────────────────
 app.include_router(health.router)
+app.include_router(upload.router)
 
 
 # ─── Root endpoint ────────────────────────────────────────────
