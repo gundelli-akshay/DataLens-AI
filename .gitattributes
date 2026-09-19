@@ -1,0 +1,16 @@
+﻿# .gitattributes — normalize line endings across platforms
+# This ensures consistent LF line endings in the repo regardless of OS.
+
+* text=auto eol=lf
+
+# Binary files — do not touch line endings
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary

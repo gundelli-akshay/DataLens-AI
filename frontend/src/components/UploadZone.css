@@ -1,0 +1,113 @@
+.upload-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Drop area ───────────────────────────────── */
+.upload-zone__droparea {
+  border: 2px dashed rgba(99, 102, 241, 0.35);
+  border-radius: 16px;
+  padding: 3rem 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  background: rgba(99, 102, 241, 0.04);
+  transition: border-color 0.25s ease, background 0.25s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.upload-zone__droparea:hover {
+  border-color: rgba(99, 102, 241, 0.65);
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.upload-zone__icon {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-6px); }
+}
+
+.upload-zone__text {
+  text-align: center;
+}
+
+.upload-zone__primary {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin: 0;
+}
+
+.upload-zone__secondary {
+  margin: 0.3rem 0 0;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.upload-zone__browse {
+  color: #818cf8;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.upload-zone__browse:hover {
+  color: #a5b4fc;
+}
+
+.upload-zone__coming-soon {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #475569;
+  background: rgba(71, 85, 105, 0.15);
+  border: 1px solid rgba(71, 85, 105, 0.25);
+  padding: 0.2rem 0.75rem;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+/* ── Format badges ───────────────────────────── */
+.upload-zone__formats {
+  display: flex;
+  gap: 0.65rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.format-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--badge-color);
+  transition: background 0.2s, transform 0.2s;
+}
+
+.format-badge:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.format-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--badge-color);
+  box-shadow: 0 0 6px var(--badge-color);
+  flex-shrink: 0;
+}
