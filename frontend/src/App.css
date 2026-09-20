@@ -102,6 +102,12 @@
 }
 
 /* ── Footer ──────────────────────────────────────────────────── */
+.footer__copyright {
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
 .footer {
   text-align: center;
   padding: 1.5rem;

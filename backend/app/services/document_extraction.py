@@ -1,4 +1,4 @@
-﻿"""
+"""
 services/document_extraction.py - Document text extraction service.
 
 Provides page-by-page text extraction for PDF files using PyMuPDF

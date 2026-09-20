@@ -1,18 +1,32 @@
 """
-services/llm.py - LLM service for explaining dataset analysis.
+services/llm.py - LLM service for explaining dataset analysis and RAG Q&A.
 
 Uses Groq API to interpret and contextualize programmatic findings from
-services/analysis.py.
+services/analysis.py and answer document questions grounded strictly in retrieved context.
 Configured via environment variables (app.core.config.settings).
 
 Constraint:
 - The LLM must strictly explain findings and not calculate or invent numbers.
+- In RAG mode, the LLM must strictly ground answers in retrieved context excerpts and cite sources.
 """
 
 from typing import Any
-from groq import Groq
+import logging
+from groq import (
+    Groq,
+    APIConnectionError,
+    RateLimitError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    NotFoundError,
+    APIError,
+    GroqError,
+)
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
     "You are DataLens AI's expert data analyst.\n"
@@ -28,6 +42,7 @@ SYSTEM_PROMPT = (
     "   - ### Recommended Next Steps\n"
     "5. Keep the tone professional, concise, and accessible to business and technical stakeholders."
 )
+
 
 def format_analysis_for_llm(data: dict[str, Any]) -> str:
     """
@@ -79,6 +94,7 @@ def format_analysis_for_llm(data: dict[str, Any]) -> str:
 
     return "\n".join(lines)
 
+
 def generate_insights(analysis_data: dict[str, Any], client: Groq | None = None) -> dict[str, Any]:
     """
     Generate natural language insights from programmatic analysis using LLM.
@@ -91,8 +107,8 @@ def generate_insights(analysis_data: dict[str, Any], client: Groq | None = None)
         dict with status, insights text, and model name.
 
     Raises:
-        ValueError if API key is not configured.
-        Exception on API / LLM failures.
+        ValueError if API key is not configured or invalid.
+        RuntimeError on API / LLM / network / timeout failures.
     """
     api_key = settings.groq_api_key
     if not client and not api_key:
@@ -106,16 +122,37 @@ def generate_insights(analysis_data: dict[str, Any], client: Groq | None = None)
     if client is None:
         client = Groq(api_key=api_key)
 
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": f"Please explain and synthesize these dataset analysis results:\n\n{prompt}"},
-        ],
-        temperature=0.3,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.groq_model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": f"Please explain and synthesize these dataset analysis results:\n\n{prompt}"},
+            ],
+            temperature=0.3,
+        )
+    except AuthenticationError as exc:
+        raise ValueError("Invalid Groq API key configured. Please verify your credentials.") from exc
+    except RateLimitError as exc:
+        raise RuntimeError("Groq rate limit exceeded. Please wait a moment before trying again.") from exc
+    except APITimeoutError as exc:
+        raise RuntimeError("Groq AI service timed out. Please try again.") from exc
+    except APIConnectionError as exc:
+        raise RuntimeError("Unable to connect to the Groq AI service. Please check network connectivity.") from exc
+    except (BadRequestError, NotFoundError) as exc:
+        raise RuntimeError(f"Requested AI model '{settings.groq_model}' is unavailable or invalid.") from exc
+    except (APIError, GroqError) as exc:
+        raise RuntimeError(f"Groq AI service encountered an error: {str(exc)}") from exc
 
-    insights = response.choices[0].message.content
+    if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
+        raise RuntimeError("Received an empty response from the AI service. Please try again.")
+
+    first_choice = response.choices[0]
+    msg = getattr(first_choice, "message", None)
+    insights = getattr(msg, "content", None) if msg else None
+
+    if not insights or not insights.strip():
+        raise RuntimeError("AI model returned an empty message. Please try again.")
 
     return {
         "status": "success",
@@ -181,7 +218,7 @@ def generate_rag_answer(
 
     Raises:
         ValueError if question is empty or API key is not configured.
-        Exception on API / LLM failures.
+        RuntimeError on API / LLM failures.
     """
     if not question or not question.strip():
         raise ValueError("Question cannot be empty.")
@@ -213,16 +250,37 @@ def generate_rag_answer(
     if client is None:
         client = Groq(api_key=api_key)
 
-    response = client.chat.completions.create(
-        model=settings.groq_model,
-        messages=[
-            {"role": "system", "content": RAG_SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        temperature=0.1,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=settings.groq_model,
+            messages=[
+                {"role": "system", "content": RAG_SYSTEM_PROMPT},
+                {"role": "user", "content": user_content},
+            ],
+            temperature=0.1,
+        )
+    except AuthenticationError as exc:
+        raise ValueError("Invalid Groq API key configured. Please verify your credentials.") from exc
+    except RateLimitError as exc:
+        raise RuntimeError("Groq rate limit exceeded. Please wait a moment before trying again.") from exc
+    except APITimeoutError as exc:
+        raise RuntimeError("Groq AI service timed out. Please try again.") from exc
+    except APIConnectionError as exc:
+        raise RuntimeError("Unable to connect to the Groq AI service. Please check network connectivity.") from exc
+    except (BadRequestError, NotFoundError) as exc:
+        raise RuntimeError(f"Requested AI model '{settings.groq_model}' is unavailable or invalid.") from exc
+    except (APIError, GroqError) as exc:
+        raise RuntimeError(f"Groq AI service encountered an error: {str(exc)}") from exc
 
-    answer_text = response.choices[0].message.content
+    if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
+        raise RuntimeError("Received an empty response from the AI service. Please try again.")
+
+    first_choice = response.choices[0]
+    msg = getattr(first_choice, "message", None)
+    answer_text = getattr(msg, "content", None) if msg else None
+
+    if not answer_text or not answer_text.strip():
+        raise RuntimeError("AI model returned an empty message. Please try again.")
 
     # Compile unique source references
     sources = []

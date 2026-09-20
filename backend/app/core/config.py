@@ -1,4 +1,4 @@
-﻿"""
+"""
 core/config.py - Application-wide configuration.
 
 Reads environment variables from .env using pydantic-settings.

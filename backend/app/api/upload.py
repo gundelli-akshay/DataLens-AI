@@ -1,4 +1,5 @@
-﻿"""
+import logging
+"""
 api/upload.py — File upload endpoint.
 
 POST /upload/
@@ -25,6 +26,8 @@ from app.core.auth import get_optional_current_user
 from typing import Optional
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 

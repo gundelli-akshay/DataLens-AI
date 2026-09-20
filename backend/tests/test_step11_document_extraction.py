@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_step11_document_extraction.py - Focused tests for Step 11: PDF and DOCX text extraction.
 """
 

@@ -1,4 +1,4 @@
-﻿"""
+"""
 main.py - DataLens AI FastAPI application entry point.
 """
 
@@ -57,6 +57,20 @@ app.include_router(analyze.router)
 app.include_router(insights.router)
 app.include_router(documents.router)
 
+
+import logging
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger("datalens.main")
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception processing %s %s: %s", request.method, request.url, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected internal server error occurred."},
+    )
 
 # --- Root endpoint ---
 @app.get("/", tags=["Root"])

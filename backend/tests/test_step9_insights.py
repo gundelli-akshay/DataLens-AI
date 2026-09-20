@@ -1,4 +1,4 @@
-﻿"""
+"""
 tests/test_step9_insights.py - Comprehensive tests for Step 9 AI Insights.
 
 Tests:

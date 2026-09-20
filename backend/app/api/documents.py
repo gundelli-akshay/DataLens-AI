@@ -1,3 +1,4 @@
+import logging
 """
 api/documents.py - Document extraction, indexing, and RAG retrieval endpoints.
 
@@ -40,6 +41,8 @@ from app.services.rag import (
     retrieve_relevant_chunks,
     vector_index,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -221,9 +224,10 @@ async def extract_document_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        logger.error("Error extracting document: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"An error occurred while extracting text from the document: {str(e)}",
+            detail="An unexpected internal server error occurred while extracting text from the document.",
         )
 
 
@@ -270,9 +274,10 @@ async def index_document_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        logger.error("Error extracting document for indexing: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to extract document for indexing: {str(e)}",
+            detail="An unexpected internal server error occurred while extracting the document for indexing.",
         )
 
     try:
@@ -284,9 +289,10 @@ async def index_document_endpoint(
         )
         return index_result
     except Exception as e:
+        logger.error("Error indexing document: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to index document: {str(e)}",
+            detail="An unexpected internal server error occurred while indexing the document.",
         )
 
 
@@ -334,9 +340,10 @@ async def retrieve_endpoint(
             "results": results,
         }
     except Exception as e:
+        logger.error("Retrieval query failed: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Retrieval query failed: {str(e)}",
+            detail="An unexpected internal server error occurred during retrieval.",
         )
 
 
@@ -439,7 +446,11 @@ async def chat_document_endpoint(
             index=vector_index,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"RAG retrieval failed: {str(e)}")
+        logger.error("RAG retrieval failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected internal server error occurred during RAG retrieval.",
+        )
 
     # Generate answer via Groq LLM service
     try:
@@ -480,5 +491,11 @@ async def chat_document_endpoint(
         }
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
-    except Exception as exc:
+    except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=f"LLM service error: {str(exc)}")
+    except Exception as exc:
+        logger.error("Unexpected error in chat_document_endpoint: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected internal server error occurred while processing document chat.",
+        )

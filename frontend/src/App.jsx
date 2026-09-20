@@ -172,7 +172,8 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        <p>DataLens AI &bull; Portfolio Project &bull; Built with FastAPI &amp; React</p>
+        <p>DataLens AI — AI-powered data and document analysis</p>
+        <p className="footer__copyright">© 2026 DataLens AI. All rights reserved.</p>
       </footer>
 
       {/* Authentication Modal */}

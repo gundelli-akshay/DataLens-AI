@@ -81,7 +81,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
       const assistantMsg = {
         id: `asst_${Date.now()}`,
         role: "assistant",
-        content: response.answer || "No response received.",
+        content: response.answer || "The provided document does not contain sufficient information to answer this question.",
         sources: response.sources || [],
         model: response.model,
       };
@@ -111,7 +111,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
   function handleReset() {
     setMessages([
       {
-        id: `init_${Date.now()}`,
+        id: `reset_${Date.now()}`,
         role: "assistant",
         content: `Conversation reset. What else would you like to know about **${fileName}**?`,
         sources: [],
@@ -121,42 +121,52 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
   }
 
   return (
-    <div className="doc-chat" aria-label="Document AI Chat">
+    <div className="doc-chat" role="region" aria-label="Document AI Chat">
       {/* Header */}
       <div className="doc-chat__header">
-        <div className="doc-chat__file-info">
-          <span className={`doc-chat__badge doc-chat__badge--${fileType.toLowerCase()}`}>
-            {fileType}
-          </span>
+        <div className="doc-chat__title-wrap">
+          <div className="doc-chat__icon-badge" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+          </div>
           <div>
-            <h3 className="doc-chat__filename">{fileName}</h3>
-            <span className="doc-chat__status">
-              <span className="doc-chat__status-dot" />
-              Grounded AI Q&amp;A Active
+            <h3 className="doc-chat__title">Document AI Chat</h3>
+            <span className="doc-chat__subtitle">
+              {fileName} &bull; {fileType}
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          className="doc-chat__reset-btn"
-          onClick={handleReset}
-          title="Clear chat history"
-        >
-          Clear Chat
-        </button>
+
+        <div className="doc-chat__controls">
+          <button
+            type="button"
+            className="doc-chat__reset-btn"
+            onClick={handleReset}
+            title="Reset conversation"
+            aria-label="Reset conversation"
+          >
+            Clear Chat
+          </button>
+        </div>
       </div>
 
-      {/* Suggested prompts if only 1 message */}
-      {messages.length === 1 && (
+      {/* Suggested Questions */}
+      {messages.length <= 1 && (
         <div className="doc-chat__suggestions">
-          <span className="doc-chat__suggestions-label">Suggested Questions:</span>
-          <div className="doc-chat__chips">
-            {SUGGESTIONS.map((sugg, i) => (
+          <span className="doc-chat__suggestions-label">Suggested prompts:</span>
+          <div className="doc-chat__suggestions-pills">
+            {SUGGESTIONS.map((sugg, idx) => (
               <button
-                key={i}
+                key={idx}
                 type="button"
-                className="doc-chat__chip"
+                className="doc-chat__pill"
                 onClick={() => handleSend(sugg)}
+                disabled={isLoading}
               >
                 {sugg}
               </button>
@@ -173,7 +183,16 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
             className={`doc-chat__msg doc-chat__msg--${msg.role}`}
           >
             <div className="doc-chat__msg-avatar">
-              {msg.role === "assistant" ? "🤖" : "👤"}
+              {msg.role === "assistant" ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                </svg>
+              ) : (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              )}
             </div>
             <div className="doc-chat__msg-content">
               <p className="doc-chat__msg-text">{msg.content}</p>
@@ -193,7 +212,11 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
                             onClick={() => toggleSourceSnippet(msg.id, sIdx)}
                             title="Click to view cited excerpt"
                           >
-                            📍 {src.source}
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "3px" }}>
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                              <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            {src.source}
                             <span className="doc-chat__source-arrow">
                               {isExpanded ? "▲" : "▼"}
                             </span>
@@ -216,13 +239,16 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
         {/* Thinking Indicator */}
         {isLoading && (
           <div className="doc-chat__msg doc-chat__msg--assistant">
-            <div className="doc-chat__msg-avatar">🤖</div>
+            <div className="doc-chat__msg-avatar">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+              </svg>
+            </div>
             <div className="doc-chat__msg-content">
               <div className="doc-chat__thinking">
-                <span className="doc-chat__dot" />
-                <span className="doc-chat__dot" />
-                <span className="doc-chat__dot" />
-                <span className="doc-chat__thinking-text">Searching document context...</span>
+                <span></span>
+                <span></span>
+                <span></span>
               </div>
             </div>
           </div>
@@ -231,17 +257,17 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Error banner */}
+      {/* Error display */}
       {errorMsg && (
         <div className="doc-chat__error" role="alert">
-          <span className="doc-chat__error-icon">⚠️</span>
-          <div className="doc-chat__error-msg">{errorMsg}</div>
+          <span className="doc-chat__error-icon">!</span>
+          <span>{errorMsg}</span>
         </div>
       )}
 
-      {/* Input bar */}
+      {/* Input Box */}
       <form
-        className="doc-chat__form"
+        className="doc-chat__input-bar"
         onSubmit={(e) => {
           e.preventDefault();
           handleSend();
@@ -251,18 +277,27 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
           ref={inputRef}
           type="text"
           className="doc-chat__input"
-          placeholder={`Ask about ${fileName}...`}
+          placeholder={`Ask anything grounded in ${fileName}...`}
           value={inputQuery}
           onChange={(e) => setInputQuery(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={isLoading}
+          aria-label="Ask a question about the document"
         />
         <button
           type="submit"
           className="doc-chat__send-btn"
-          disabled={!inputQuery.trim() || isLoading}
+          disabled={isLoading || !inputQuery.trim()}
+          aria-label="Send question"
         >
-          Send
+          {isLoading ? (
+            <span className="doc-chat__btn-spinner" />
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          )}
         </button>
       </form>
     </div>

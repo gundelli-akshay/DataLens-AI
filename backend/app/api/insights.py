@@ -1,4 +1,5 @@
-﻿"""
+import logging
+"""
 api/insights.py - AI Insights endpoint.
 
 POST /ai/insights/
@@ -28,6 +29,8 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.services.analysis import analyze_csv, analyze_xlsx
 from app.services.llm import generate_insights
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai/insights", tags=["AI Insights"])
 
@@ -106,5 +109,11 @@ def get_insights(request: InsightsRequest):
         return insights_result
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=f"LLM service error: {str(exc)}")
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"LLM service error: {exc}")
+        logger.error("Unexpected error in get_insights: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected internal server error occurred while generating insights.",
+        )

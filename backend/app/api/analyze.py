@@ -1,3 +1,4 @@
+import logging
 """
 api/analyze.py — Data analysis endpoint.
 
@@ -17,6 +18,8 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.services.analysis import analyze_csv, analyze_xlsx
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analyze", tags=["Analysis"])
 
@@ -88,10 +91,17 @@ def analyze_file(request: AnalyzeRequest):
     original_filename = re.sub(r"^[0-9a-f]{32}_", "", safe_name, count=1) or safe_name
 
     # ── 5. Run the appropriate analysis ─────────────────────
-    if suffix == ".csv":
-        result = analyze_csv(file_path, original_filename)
-    else:  # .xlsx
-        result = analyze_xlsx(file_path, original_filename)
+    try:
+        if suffix == ".csv":
+            result = analyze_csv(file_path, original_filename)
+        else:
+            result = analyze_xlsx(file_path, original_filename)
+    except Exception as exc:
+        logger.error("Analysis execution error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected internal server error occurred while analyzing the file.",
+        )
 
     # ── 6. Surface analysis errors as HTTP errors ────────────
     if result.get("status") == "error":
