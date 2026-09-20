@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-20b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
+
+    # Database
+    database_url: str = "sqlite:///./datalens.db"  # Default to local sqlite
+
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),
         env_file_encoding="utf-8",

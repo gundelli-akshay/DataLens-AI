@@ -8,6 +8,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import health, upload, analyze, insights, documents
 from app.core.config import settings
 
+from app.db.session import engine, Base
+from app.db import models
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
+
+
 # --- App instance ---
 app = FastAPI(
     title=settings.app_name,

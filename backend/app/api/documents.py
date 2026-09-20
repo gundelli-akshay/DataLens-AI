@@ -16,10 +16,13 @@ import re
 from typing import Any
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models import Document, ChatMessage
 from app.services.document_extraction import (
     extract_document,
     extract_text_from_pdf,
@@ -286,7 +289,7 @@ async def clear_index_endpoint():
     }
 
 @router.post("/chat")
-async def chat_document_endpoint(payload: DocumentChatRequest):
+async def chat_document_endpoint(payload: DocumentChatRequest, db: Session = Depends(get_db)):
     """
     Answer user questions about an uploaded PDF/DOCX document using RAG retrieval + Groq LLM.
     Strictly grounds answers in the retrieved document chunks and cites page/paragraph sources.
@@ -355,8 +358,38 @@ async def chat_document_endpoint(payload: DocumentChatRequest):
 
     # Generate answer via Groq LLM service
     try:
+
         answer_data = generate_rag_answer(question=question, chunks=retrieved_chunks)
+        
+        # --- Save Chat Messages to DB ---
+        # Look up document by target_name
+        doc_record = db.query(Document).filter(
+            (Document.saved_filename == target_name) | 
+            (Document.original_filename == target_name)
+        ).first()
+        
+        if doc_record:
+            # Insert user question
+            user_msg = ChatMessage(
+                document_id=doc_record.id,
+                role="user",
+                content=question
+            )
+            db.add(user_msg)
+            
+            # Insert assistant answer
+            assistant_msg = ChatMessage(
+                document_id=doc_record.id,
+                role="assistant",
+                content=answer_data["answer"],
+                sources=answer_data["sources"]
+            )
+            db.add(assistant_msg)
+            db.commit()
+        # --------------------------------
+        
         return {
+
             "status": "success",
             "question": question,
             "filename": target_name,

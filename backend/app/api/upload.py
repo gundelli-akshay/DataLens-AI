@@ -17,7 +17,10 @@ Security notes:
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models import Document
 
 from app.core.config import settings
 
@@ -64,7 +67,7 @@ def _human_size(n: int) -> str:
 
 
 @router.post("/")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
     """
     Upload a single file (CSV, XLSX, PDF, or DOCX).
 
@@ -108,6 +111,19 @@ async def upload_file(file: UploadFile = File(...)):
     saved_name = _safe_filename(original_name)
     upload_path = settings.upload_dir_path / saved_name
     upload_path.write_bytes(content)
+
+    #  5b. Save to DB (for PDF/DOCX) 
+    if suffix in {".pdf", ".docx"}:
+        doc_record = Document(
+            original_filename=original_name,
+            saved_filename=saved_name,
+            file_type=EXTENSION_LABELS[suffix],
+            file_size_bytes=len(content)
+        )
+        db.add(doc_record)
+        db.commit()
+        db.refresh(doc_record)
+
 
     # ── 6. Return metadata (no local paths) ────────────────────
     return {
