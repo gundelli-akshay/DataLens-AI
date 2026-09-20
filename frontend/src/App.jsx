@@ -5,6 +5,7 @@ import Header from "./components/Header";
 import UploadZone from "./components/UploadZone";
 import ResultsPlaceholder from "./components/ResultsPlaceholder";
 import AnalysisResults from "./components/AnalysisResults";
+import DocumentChat from "./components/DocumentChat";
 import "./App.css";
 
 // ── Analysis states: idle | loading | success | error ──────────

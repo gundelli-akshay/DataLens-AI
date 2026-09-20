@@ -89,6 +89,7 @@ def chunk_extracted_document(
         List of chunk dictionaries with metadata and source references.
     """
     filename = doc_data.get("filename", "document")
+    saved_filename = doc_data.get("saved_filename")
     file_type = (doc_data.get("file_type") or "PDF").upper()
     chunks: list[dict[str, Any]] = []
     chunk_counter = 0
@@ -108,6 +109,7 @@ def chunk_extracted_document(
                     "chunk_id": f"{filename}_p{page_num}_c{c_idx}",
                     "text": chunk_text,
                     "filename": filename,
+                    "saved_filename": saved_filename,
                     "file_type": "PDF",
                     "page_number": page_num,
                     "paragraph_number": None,
@@ -128,6 +130,7 @@ def chunk_extracted_document(
                     "chunk_id": f"{filename}_para{para_num}_c{c_idx}",
                     "text": chunk_text,
                     "filename": filename,
+                    "saved_filename": saved_filename,
                     "file_type": "DOCX",
                     "page_number": None,
                     "paragraph_number": para_num,
@@ -146,6 +149,7 @@ def chunk_extracted_document(
                 "chunk_id": f"{filename}_c{c_idx}",
                 "text": chunk_text,
                 "filename": filename,
+                "saved_filename": saved_filename,
                 "file_type": file_type,
                 "page_number": 1 if file_type == "PDF" else None,
                 "paragraph_number": 1 if file_type == "DOCX" else None,
@@ -257,7 +261,19 @@ class InMemoryVectorIndex:
             q = q / q_norm
 
         if filename:
-            indices = [i for i, c in enumerate(self.chunks) if c.get("filename") == filename]
+            def _matches(c: dict[str, Any]) -> bool:
+                c_fn = c.get("filename")
+                c_sfn = c.get("saved_filename")
+                if c_fn == filename or c_sfn == filename:
+                    return True
+                target_base = Path(filename).name
+                if c_fn and (Path(c_fn).name == target_base or Path(c_fn).name.endswith(f"_{target_base}")):
+                    return True
+                if c_sfn and (Path(c_sfn).name == target_base or Path(c_sfn).name.endswith(f"_{target_base}")):
+                    return True
+                return False
+
+            indices = [i for i, c in enumerate(self.chunks) if _matches(c)]
             if not indices:
                 return []
             sub_embeddings = self.embeddings[indices]

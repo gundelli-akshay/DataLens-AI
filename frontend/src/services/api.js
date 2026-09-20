@@ -102,3 +102,57 @@ export async function getAiInsights({ savedFilename, analysis } = {}) {
 
   return response.json();
 }
+/**
+ * POST /documents/index - chunk, embed, and index an uploaded PDF or DOCX file.
+ *
+ * @param {string} savedFilename
+ * @returns {Promise<{ status: string, filename: string, chunks_indexed: number }>}
+ */
+export async function indexDocument(savedFilename) {
+  const response = await fetch(`${API_BASE}/documents/index`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ saved_filename: savedFilename }),
+  });
+
+  if (!response.ok) {
+    let detail = "Failed to index document.";
+    try {
+      const data = await response.json();
+      if (data.detail) detail = data.detail;
+    } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /documents/chat - ask a question grounded in an indexed PDF/DOCX document.
+ *
+ * @param {{ question: string, filename?: string, savedFilename?: string, topK?: number }} params
+ * @returns {Promise<{ status: string, question: string, answer: string, sources: Array, model: string }>}
+ */
+export async function chatDocument({ question, filename, savedFilename, topK = 4 }) {
+  const response = await fetch(`${API_BASE}/documents/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      question,
+      filename: filename || savedFilename,
+      saved_filename: savedFilename,
+      top_k: topK,
+    }),
+  });
+
+  if (!response.ok) {
+    let detail = "Failed to answer document question.";
+    try {
+      const data = await response.json();
+      if (data.detail) detail = data.detail;
+    } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}

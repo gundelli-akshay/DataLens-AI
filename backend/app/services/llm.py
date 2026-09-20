@@ -122,3 +122,139 @@ def generate_insights(analysis_data: dict[str, Any], client: Groq | None = None)
         "insights": insights,
         "model": settings.groq_model,
     }
+
+
+RAG_SYSTEM_PROMPT = (
+    "You are DataLens AI's expert document assistant.\n"
+    "Your role is to answer user questions concisely, factually, and truthfully based ONLY on the provided context excerpts below.\n\n"
+    "CRITICAL CONSTRAINTS:\n"
+    "1. Answer ONLY using information explicitly stated in the provided context excerpts.\n"
+    "2. Do NOT invent, extrapolate, guess, or incorporate any outside knowledge or unstated facts.\n"
+    "3. If the context does not contain sufficient facts to answer the question, clearly state: "
+    "'The provided document does not contain sufficient information to answer this question.'\n"
+    "4. Keep your answer concise, direct, and factual.\n"
+    "5. When stating facts from the context, reference the source locations (e.g. Page X or Paragraph Y) wherever applicable."
+)
+
+
+def format_rag_context(chunks: list[dict[str, Any]]) -> str:
+    """
+    Format retrieved document chunks into structured context for the LLM.
+    """
+    if not chunks:
+        return "No relevant document excerpts were found."
+
+    parts = []
+    for idx, chunk in enumerate(chunks, 1):
+        source_label = ""
+        if chunk.get("page_number") is not None:
+            source_label = f"Page {chunk['page_number']}"
+        elif chunk.get("paragraph_number") is not None:
+            source_label = f"Paragraph {chunk['paragraph_number']}"
+        else:
+            source_label = "Excerpt"
+
+        filename = chunk.get("filename", "Document")
+        header = f"--- Context Excerpt [{idx}] | {filename} ({source_label}) ---"
+        text = chunk.get("text", "").strip()
+        parts.append(f"{header}\n{text}")
+
+    return "\n\n".join(parts)
+
+
+def generate_rag_answer(
+    question: str,
+    chunks: list[dict[str, Any]],
+    client: Groq | None = None,
+) -> dict[str, Any]:
+    """
+    Generate a concise grounded answer to the user's question using Groq LLM
+    and the retrieved document context chunks.
+
+    Args:
+        question: The user's question string.
+        chunks: List of retrieved chunk dictionaries from RAG retrieval.
+        client: Optional Groq client instance (useful for mocking/testing).
+
+    Returns:
+        dict with status, answer, sources, and model.
+
+    Raises:
+        ValueError if question is empty or API key is not configured.
+        Exception on API / LLM failures.
+    """
+    if not question or not question.strip():
+        raise ValueError("Question cannot be empty.")
+
+    if not chunks:
+        return {
+            "status": "success",
+            "answer": "The provided document does not contain sufficient information to answer this question.",
+            "sources": [],
+            "model": settings.groq_model,
+        }
+
+    api_key = settings.groq_api_key
+    if not client and not api_key:
+        raise ValueError(
+            "Groq API key is not configured. "
+            "Please set GROQ_API_KEY in your environment (.env file)."
+        )
+
+    context_str = format_rag_context(chunks)
+
+    user_content = (
+        f"Context excerpts from document:\n\n"
+        f"{context_str}\n\n"
+        f"User Question: {question.strip()}\n\n"
+        "Answer strictly based on the context excerpts above:"
+    )
+
+    if client is None:
+        client = Groq(api_key=api_key)
+
+    response = client.chat.completions.create(
+        model=settings.groq_model,
+        messages=[
+            {"role": "system", "content": RAG_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+        temperature=0.1,
+    )
+
+    answer_text = response.choices[0].message.content
+
+    # Compile unique source references
+    sources = []
+    seen = set()
+    for c in chunks:
+        page_num = c.get("page_number")
+        para_num = c.get("paragraph_number")
+        fname = c.get("filename", "")
+        ref_key = (fname, page_num, para_num)
+        if ref_key not in seen:
+            seen.add(ref_key)
+            src_label = (
+                f"Page {page_num}"
+                if page_num is not None
+                else f"Paragraph {para_num}"
+                if para_num is not None
+                else "Document"
+            )
+            raw_text = c.get("text", "").strip()
+            snippet = raw_text[:160] + ("..." if len(raw_text) > 160 else "")
+            sources.append({
+                "source": src_label,
+                "filename": fname,
+                "page_number": page_num,
+                "paragraph_number": para_num,
+                "snippet": snippet,
+                "score": c.get("score"),
+            })
+
+    return {
+        "status": "success",
+        "answer": answer_text,
+        "sources": sources,
+        "model": settings.groq_model,
+    }
