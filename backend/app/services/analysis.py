@@ -13,6 +13,7 @@ Design notes:
 """
 
 import math
+import re
 import warnings
 from pathlib import Path
 from typing import Any
@@ -117,6 +118,167 @@ def _categorical_summary(col: pd.Series, top_n: int = 5) -> dict:
     }
 
 
+# ── Chart data helpers ─────────────────────────────────────────
+
+def _is_id_like(col_name: str, series: pd.Series) -> bool:
+    """
+    Return True if a column looks like a surrogate key rather than a metric.
+
+    Heuristic 1 — name: column name is exactly "id", or starts/ends with
+    "_id" / "id_" (e.g. "employee_id", "user_id").
+
+    Heuristic 2 — values: integers that form a consecutive sequence starting
+    at 0 or 1 (classic auto-increment primary key). This deliberately does
+    NOT flag salary or other numeric columns that happen to be all-unique.
+    """
+    lower = col_name.lower()
+    if re.search(r"(^|_)id(_|$)", lower):
+        return True
+    # Consecutive integer sequence: sorted values equal [min, min+1, ..., max]
+    if pd.api.types.is_integer_dtype(series) and series.nunique() == len(series):
+        sorted_vals = series.dropna().sort_values().reset_index(drop=True)
+        if len(sorted_vals) > 0:
+            expected = pd.RangeIndex(start=sorted_vals.iloc[0],
+                                     stop=sorted_vals.iloc[0] + len(sorted_vals))
+            if (sorted_vals.values == expected.values).all():
+                return True
+    return False
+
+
+def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
+    """
+    Produce up to 3 chart-ready data objects from the DataFrame.
+
+    Returned list contains dicts of the form:
+      { type, title, x_key, y_key, x_label, y_label, data: [...] }
+
+    Chart types:
+    1. bar     — average of a numeric metric grouped by a categorical column
+    2. line    — numeric metric aggregated over a date column (year/month)
+    3. scatter — two numeric metrics plotted point-by-point
+    """
+    charts = []
+
+    numeric_cols = [c["name"] for c in col_info if c["category"] == "numeric"]
+    cat_cols     = [c["name"] for c in col_info if c["category"] == "categorical"]
+    date_cols    = [c["name"] for c in col_info if c["category"] == "date"]
+
+    # Prefer real metric columns over surrogate IDs for bar/scatter/line charts.
+    metric_cols = [n for n in numeric_cols if not _is_id_like(n, df[n])]
+    if not metric_cols:
+        metric_cols = numeric_cols  # fall back if everything looks like an ID
+
+    # ── 1. Bar chart ──────────────────────────────────────────
+    # Needs: a categorical column with 2–15 groups AND more than one value
+    # per group (unique_count / row_count < 0.5 rules out name-like columns).
+    n_rows = max(len(df), 1)
+    best_cat = next(
+        (
+            c for c in cat_cols
+            if 2 <= df[c].nunique(dropna=True) <= 15
+            and df[c].nunique(dropna=True) / n_rows <= 0.5
+        ),
+        None,
+    )
+    if best_cat:
+        if metric_cols:
+            # Average metric per category — much more useful than raw counts.
+            num_col = metric_cols[0]
+            grouped = (
+                df.groupby(best_cat)[num_col]
+                  .mean()
+                  .reset_index()
+                  .sort_values(num_col, ascending=False)
+                  .head(10)
+            )
+            charts.append({
+                "type":    "bar",
+                "title":   f"Average {num_col} by {best_cat}",
+                "x_key":   "name",
+                "y_key":   "value",
+                "x_label": best_cat,
+                "y_label": f"Avg {num_col}",
+                "data": [
+                    {"name": str(row[best_cat]), "value": _safe(row[num_col])}
+                    for _, row in grouped.iterrows()
+                ],
+            })
+        else:
+            # No numeric columns — show frequency distribution.
+            vc = df[best_cat].value_counts(dropna=True).head(10)
+            charts.append({
+                "type":    "bar",
+                "title":   f"Distribution of {best_cat}",
+                "x_key":   "name",
+                "y_key":   "value",
+                "x_label": best_cat,
+                "y_label": "Count",
+                "data": [{"name": str(k), "value": int(v)} for k, v in vc.items()],
+            })
+
+    # ── 2. Line chart ─────────────────────────────────────────
+    # Needs: a date column + a metric column, and at least 2 distinct periods.
+    if date_cols and metric_cols:
+        date_col = date_cols[0]
+        num_col  = metric_cols[0]
+
+        temp = df[[date_col, num_col]].copy()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            temp[date_col] = pd.to_datetime(temp[date_col], errors="coerce")
+        temp = temp.dropna()
+
+        if len(temp) >= 2:
+            date_range_days = (temp[date_col].max() - temp[date_col].min()).days
+            # Group by year if span > 2 years, otherwise by month.
+            if date_range_days > 730:
+                temp["period"] = temp[date_col].dt.year.astype(str)
+            else:
+                temp["period"] = temp[date_col].dt.to_period("M").astype(str)
+
+            grouped = (
+                temp.groupby("period")[num_col]
+                    .mean()
+                    .reset_index()
+                    .sort_values("period")
+            )
+            if len(grouped) >= 2:
+                charts.append({
+                    "type":    "line",
+                    "title":   f"{num_col} over time",
+                    "x_key":   "period",
+                    "y_key":   "value",
+                    "x_label": date_col,
+                    "y_label": f"Avg {num_col}",
+                    "data": [
+                        {"period": str(row["period"]), "value": _safe(row[num_col])}
+                        for _, row in grouped.iterrows()
+                    ],
+                })
+
+    # ── 3. Scatter chart ──────────────────────────────────────
+    # Needs: at least 2 metric columns and 3+ data points.
+    if len(metric_cols) >= 2:
+        x_col = metric_cols[0]
+        y_col = metric_cols[1]
+        sample = df[[x_col, y_col]].dropna().head(200)
+        if len(sample) >= 3:
+            charts.append({
+                "type":    "scatter",
+                "title":   f"{y_col} vs {x_col}",
+                "x_key":   "x",
+                "y_key":   "y",
+                "x_label": x_col,
+                "y_label": y_col,
+                "data": [
+                    {"x": _safe(row[x_col]), "y": _safe(row[y_col])}
+                    for _, row in sample.iterrows()
+                ],
+            })
+
+    return charts  # maximum 3 charts
+
+
 # ── Core analyser ───────────────────────────────────────────────
 
 def analyze_dataframe(df: pd.DataFrame, filename: str, file_type: str) -> dict:
@@ -181,6 +343,7 @@ def analyze_dataframe(df: pd.DataFrame, filename: str, file_type: str) -> dict:
         "duplicate_rows":       duplicate_rows,
         "numeric_summary":      numeric_summary,
         "categorical_summary":  categorical_summary,
+        "chart_data":           _generate_chart_data(df, column_info),
     }
 
 

@@ -1,4 +1,5 @@
 import "./AnalysisResults.css";
+import ChartPanel from "./ChartPanel";
 
 // ── Number formatting helpers ──────────────────────────────────
 function fmt(n) {
@@ -202,6 +203,13 @@ export default function AnalysisResults({ data }) {
               <span key={c.name} className="ar-date-item">{c.name}</span>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ── Charts ── */}
+      {data.chart_data?.length > 0 && (
+        <div className="ar-section">
+          <ChartPanel charts={data.chart_data} />
         </div>
       )}
 
