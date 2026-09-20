@@ -28,12 +28,12 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 20
 
     # AI / LLM
-    openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
-    openai_base_url: str | None = None
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",   # silently ignore unknown env vars

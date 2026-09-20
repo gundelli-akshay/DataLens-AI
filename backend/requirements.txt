@@ -14,7 +14,7 @@ pandas==2.2.3
 openpyxl==3.1.5
 
 # ── AI / LLM ──
-openai>=1.0.0
+groq
 
 # ── Added as the project grows ──
 # sqlalchemy

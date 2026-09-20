@@ -1,7 +1,7 @@
-﻿"""
+"""
 services/llm.py - LLM service for explaining dataset analysis.
 
-Uses OpenAI API to interpret and contextualize programmatic findings from
+Uses Groq API to interpret and contextualize programmatic findings from
 services/analysis.py.
 Configured via environment variables (app.core.config.settings).
 
@@ -10,7 +10,7 @@ Constraint:
 """
 
 from typing import Any
-from openai import OpenAI
+from groq import Groq
 
 from app.core.config import settings
 
@@ -28,7 +28,6 @@ SYSTEM_PROMPT = (
     "   - ### Recommended Next Steps\n"
     "5. Keep the tone professional, concise, and accessible to business and technical stakeholders."
 )
-
 
 def format_analysis_for_llm(data: dict[str, Any]) -> str:
     """
@@ -80,14 +79,13 @@ def format_analysis_for_llm(data: dict[str, Any]) -> str:
 
     return "\n".join(lines)
 
-
-def generate_insights(analysis_data: dict[str, Any], client: OpenAI | None = None) -> dict[str, Any]:
+def generate_insights(analysis_data: dict[str, Any], client: Groq | None = None) -> dict[str, Any]:
     """
     Generate natural language insights from programmatic analysis using LLM.
 
     Args:
         analysis_data: The structured dictionary from services/analysis.py.
-        client: Optional OpenAI client instance (useful for mocking/testing).
+        client: Optional Groq client instance (useful for mocking/testing).
 
     Returns:
         dict with status, insights text, and model name.
@@ -96,23 +94,20 @@ def generate_insights(analysis_data: dict[str, Any], client: OpenAI | None = Non
         ValueError if API key is not configured.
         Exception on API / LLM failures.
     """
-    api_key = settings.openai_api_key
+    api_key = settings.groq_api_key
     if not client and not api_key:
         raise ValueError(
-            "OpenAI API key is not configured. "
-            "Please set OPENAI_API_KEY in your environment (.env file)."
+            "Groq API key is not configured. "
+            "Please set GROQ_API_KEY in your environment (.env file)."
         )
 
     prompt = format_analysis_for_llm(analysis_data)
 
     if client is None:
-        client = OpenAI(
-            api_key=api_key,
-            base_url=settings.openai_base_url or None,
-        )
+        client = Groq(api_key=api_key)
 
     response = client.chat.completions.create(
-        model=settings.openai_model,
+        model=settings.groq_model,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": f"Please explain and synthesize these dataset analysis results:\n\n{prompt}"},
@@ -125,5 +120,5 @@ def generate_insights(analysis_data: dict[str, Any], client: OpenAI | None = Non
     return {
         "status": "success",
         "insights": insights,
-        "model": settings.openai_model,
+        "model": settings.groq_model,
     }

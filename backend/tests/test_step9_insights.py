@@ -85,10 +85,10 @@ class TestStep9LLMService(unittest.TestCase):
 
     def test_generate_insights_missing_key_raises(self):
         """When API key is missing and no client passed, raise ValueError."""
-        with patch.object(settings, "openai_api_key", ""):
+        with patch.object(settings, "groq_api_key", ""):
             with self.assertRaises(ValueError) as ctx:
                 generate_insights(self.sample_analysis)
-            self.assertIn("OpenAI API key is not configured", str(ctx.exception))
+            self.assertIn("Groq API key is not configured", str(ctx.exception))
 
     def test_generate_insights_with_mock_client(self):
         """generate_insights succeeds when using a mock OpenAI client."""
@@ -103,7 +103,7 @@ class TestStep9LLMService(unittest.TestCase):
 
         self.assertEqual(res["status"], "success")
         self.assertIn("The sales dataset contains 100 transactions", res["insights"])
-        self.assertEqual(res["model"], settings.openai_model)
+        self.assertEqual(res["model"], settings.groq_model)
         mock_client.chat.completions.create.assert_called_once()
 
 
@@ -138,7 +138,7 @@ class TestStep9InsightsEndpoint(unittest.TestCase):
         mock_return = {
             "status": "success",
             "insights": "### Executive Summary\nThe employee dataset has 5 records with an average salary of 70,000.",
-            "model": "gpt-4o-mini",
+            "model": "openai/gpt-oss-20b",
         }
         with patch("app.api.insights.generate_insights", return_value=mock_return) as mock_gen:
             resp = self.client.post("/ai/insights/", json={"analysis": self.sample_analysis})
@@ -146,7 +146,7 @@ class TestStep9InsightsEndpoint(unittest.TestCase):
             body = resp.json()
             self.assertEqual(body["status"], "success")
             self.assertIn("Executive Summary", body["insights"])
-            self.assertEqual(body["model"], "gpt-4o-mini")
+            self.assertEqual(body["model"], "openai/gpt-oss-20b")
             mock_gen.assert_called_once()
 
     def test_insights_with_saved_filename(self):
@@ -158,7 +158,7 @@ class TestStep9InsightsEndpoint(unittest.TestCase):
         mock_return = {
             "status": "success",
             "insights": "### Insights\nDepartment analysis shows 2 departments.",
-            "model": "gpt-4o-mini",
+            "model": "openai/gpt-oss-20b",
         }
 
         try:
@@ -222,11 +222,11 @@ class TestStep9InsightsEndpoint(unittest.TestCase):
                 file_path.unlink()
 
     def test_insights_missing_api_key_returns_503(self):
-        """Returns 503 when OpenAI API key is not configured."""
-        with patch("app.api.insights.generate_insights", side_effect=ValueError("OpenAI API key is not configured.")):
+        """Returns 503 when Groq API key is not configured."""
+        with patch("app.api.insights.generate_insights", side_effect=ValueError("Groq API key is not configured.")):
             resp = self.client.post("/ai/insights/", json={"analysis": self.sample_analysis})
             self.assertEqual(resp.status_code, 503)
-            self.assertIn("OpenAI API key is not configured", resp.json()["detail"])
+            self.assertIn("Groq API key is not configured", resp.json()["detail"])
 
     def test_insights_llm_failure_returns_502(self):
         """Returns 502 when LLM service throws an upstream error."""
