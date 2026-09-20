@@ -35,9 +35,11 @@ try:
 except Exception:
     pass
 
-# Production safety check for default secrets
+# Production safety validation
+for warning_msg in settings.validate_production_settings():
+    logger.warning("PRODUCTION CONFIG WARNING: %s", warning_msg)
 if settings.is_production and settings.jwt_secret_key == DEFAULT_DEV_JWT_SECRET:
-    logger.critical("SECURITY ALERT: Running in production with default JWT secret key! Change JWT_SECRET_KEY in production.")
+    logger.critical("SECURITY ALERT: Running in production with default JWT secret key! Set a secure JWT_SECRET_KEY.")
 
 # --- App instance ---
 app = FastAPI(

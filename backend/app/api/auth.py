@@ -223,6 +223,29 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
     }
 
 
+
+
+class AuthConfigResponse(BaseModel):
+    status: str = "success"
+    google_client_id: str = ""
+    google_auth_enabled: bool = False
+
+
+@router.get("/config", response_model=AuthConfigResponse)
+def get_auth_config():
+    """
+    Return public authentication configuration.
+    Allows frontend clients to configure Google Identity Services dynamically
+    without baking client IDs into static production bundles.
+    Never exposes secrets or credentials.
+    """
+    client_id = settings.google_client_id.strip() if settings.google_client_id else ""
+    return {
+        "status": "success",
+        "google_client_id": client_id,
+        "google_auth_enabled": bool(client_id),
+    }
+
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):
     """Return the profile of the currently authenticated user."""

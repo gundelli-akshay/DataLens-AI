@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { login, signup, loginWithGoogle } from "../services/api";
+import { login, signup, loginWithGoogle, getAuthConfig } from "../services/api";
 import "./AuthModal.css";
 
 export default function AuthModal({ isOpen, onClose, onSuccess }) {
@@ -9,8 +9,22 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [activeClientId, setActiveClientId] = useState(
+    import.meta.env.VITE_GOOGLE_CLIENT_ID || ""
+  );
 
   const googleBtnRef = useRef(null);
+
+  // Fetch public Google Client ID from backend if not supplied via build env
+  useEffect(() => {
+    if (!activeClientId) {
+      getAuthConfig().then((cfg) => {
+        if (cfg?.google_client_id) {
+          setActiveClientId(cfg.google_client_id);
+        }
+      }).catch(() => {});
+    }
+  }, [activeClientId]);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -20,16 +34,16 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
       setPassword("");
       setFullName("");
     }
-  }, [isOpen, mode]);
+  }, [isOpen, mode, activeClientId]);
 
   // Google Identity Services integration
   useEffect(() => {
     if (!isOpen) return;
 
-    if (window.google?.accounts?.id && googleBtnRef.current) {
+    if (window.google?.accounts?.id && googleBtnRef.current && activeClientId) {
       try {
         window.google.accounts.id.initialize({
-          client_id: "mock-google-client-id.apps.googleusercontent.com",
+          client_id: activeClientId,
           callback: async (response) => {
             if (response?.credential) {
               setLoading(true);
@@ -58,7 +72,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
         console.warn("GSI initialization skipped/unavailable:", err);
       }
     }
-  }, [isOpen, mode]);
+  }, [isOpen, mode, activeClientId]);
 
   if (!isOpen) return null;
 
@@ -93,6 +107,10 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
 
   // Fallback Google login click handler
   async function handleCustomGoogleClick() {
+    if (!activeClientId) {
+      setErrorMsg("Google Sign-In is not configured. Please sign in with Email & Password.");
+      return;
+    }
     if (window.google?.accounts?.id) {
       window.google.accounts.id.prompt();
     } else {

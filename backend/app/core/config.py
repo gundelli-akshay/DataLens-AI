@@ -17,7 +17,7 @@ DEFAULT_DEV_JWT_SECRET = "datalens-dev-super-secret-jwt-key-32-chars-minimum!"
 class Settings(BaseSettings):
     """
     Central settings object.
-    Values are loaded automatically from the .env file in the backend/ directory.
+    Values are loaded automatically from the .env file in the backend/ directory or container env.
     """
 
     # Application
@@ -74,6 +74,24 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == "production"
+
+    def validate_production_settings(self) -> List[str]:
+        """
+        Return validation warnings for production deployments.
+        Checks for insecure default JWT secrets and ephemeral SQLite database in production.
+        """
+        warnings: List[str] = []
+        if self.is_production:
+            if self.jwt_secret_key == DEFAULT_DEV_JWT_SECRET or len(self.jwt_secret_key) < 32:
+                warnings.append(
+                    "JWT_SECRET_KEY is using an insecure default or is shorter than 32 characters."
+                )
+            if self.database_url.strip().lower().startswith("sqlite"):
+                warnings.append(
+                    "DATABASE_URL is configured with SQLite in production mode. "
+                    "A persistent PostgreSQL database is recommended for production deployment."
+                )
+        return warnings
 
     @property
     def upload_dir_path(self) -> Path:

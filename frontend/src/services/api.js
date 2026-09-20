@@ -5,7 +5,7 @@
  * Components import functions from here - they never call fetch() directly.
  */
 
-const API_BASE = "/api";
+const API_BASE = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 const TOKEN_KEY = "datalens_token";
 const USER_KEY = "datalens_user";
 
@@ -128,6 +128,20 @@ export async function getMe() {
   const data = await response.json();
   setAuthData(token, data.user);
   return data.user;
+}
+
+
+/**
+ * GET /auth/config - fetch public authentication configuration (Google Client ID, etc.).
+ */
+export async function getAuthConfig() {
+  try {
+    const response = await fetch(`${API_BASE}/auth/config`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 // --- General API Endpoints ---
