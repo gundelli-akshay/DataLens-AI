@@ -1,0 +1,330 @@
+﻿/* ─── AnalysisResults.css ────────────────────────────────────── */
+/* Matches the existing dark glassmorphic DataLens AI design.     */
+
+.ar {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* ── Header ──────────────────────────────────────────────────── */
+.ar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.ar-header__filename {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin: 0 0 0.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 420px;
+}
+
+.ar-header__meta {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.ar-header__type {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #818cf8;
+  background: rgba(99,102,241,0.15);
+  border: 1px solid rgba(99,102,241,0.3);
+  border-radius: 6px;
+  padding: 0.15rem 0.55rem;
+}
+
+.ar-header__sheet {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.ar-header__badge {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #22c55e;
+  background: rgba(34,197,94,0.1);
+  border: 1px solid rgba(34,197,94,0.25);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+}
+
+/* ── Sections ────────────────────────────────────────────────── */
+.ar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.ar-section__title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.ar-section__count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #475569;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* ── Overview stat cards ─────────────────────────────────────── */
+.ar-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 600px) {
+  .ar-stats-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+.ar-stat {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: background 0.2s;
+}
+.ar-stat--accent {
+  border-color: rgba(251,191,36,0.25);
+  background: rgba(251,191,36,0.04);
+}
+
+.ar-stat__value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  line-height: 1;
+}
+.ar-stat--accent .ar-stat__value { color: #fbbf24; }
+
+.ar-stat__label {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* ── Column overview table ───────────────────────────────────── */
+.ar-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.07);
+}
+
+.ar-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.83rem;
+  white-space: nowrap;
+}
+
+.ar-table thead tr {
+  background: rgba(255,255,255,0.04);
+}
+
+.ar-table th {
+  text-align: left;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+  color: #64748b;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.ar-table td {
+  padding: 0.55rem 1rem;
+  color: #cbd5e1;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
+.ar-table tbody tr:last-child td { border-bottom: none; }
+.ar-table tbody tr:hover td { background: rgba(255,255,255,0.02); }
+
+.ar-table__idx  { color: #475569; width: 2.5rem; }
+.ar-table__name { color: #e2e8f0; font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.ar-table__dtype { color: #818cf8; font-family: monospace; font-size: 0.78rem; }
+.ar-table__warn  { color: #fbbf24; }
+
+/* ── Category badges ─────────────────────────────────────────── */
+.ar-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  text-transform: uppercase;
+}
+.ar-badge--numeric     { background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
+.ar-badge--categorical { background: rgba(34,197,94,0.12);  color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+.ar-badge--date        { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
+
+/* ── Numeric stats cards ─────────────────────────────────────── */
+.ar-num-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+}
+
+.ar-num-card {
+  background: rgba(99,102,241,0.05);
+  border: 1px solid rgba(99,102,241,0.15);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+
+.ar-num-card__name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #a5b4fc;
+  margin: 0 0 0.65rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ar-num-card__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 0.75rem;
+}
+
+.ar-num-card__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.ar-num-card__item-label {
+  font-size: 0.68rem;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ar-num-card__item-value {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+/* ── Categorical cards ───────────────────────────────────────── */
+.ar-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+
+.ar-cat-card {
+  background: rgba(34,197,94,0.04);
+  border: 1px solid rgba(34,197,94,0.12);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+
+.ar-cat-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.ar-cat-card__name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #86efac;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ar-cat-card__unique {
+  font-size: 0.72rem;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.ar-cat-card__values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ar-cat-card__row {
+  display: grid;
+  grid-template-columns: 90px 1fr 40px;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.ar-cat-card__val {
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ar-cat-card__bar-wrap {
+  background: rgba(255,255,255,0.05);
+  border-radius: 999px;
+  height: 5px;
+  overflow: hidden;
+}
+
+.ar-cat-card__bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+  border-radius: 999px;
+  min-width: 3px;
+  transition: width 0.4s ease;
+}
+
+.ar-cat-card__count {
+  color: #64748b;
+  text-align: right;
+  font-size: 0.75rem;
+}
+
+/* ── Date columns ────────────────────────────────────────────── */
+.ar-date-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ar-date-item {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #fbbf24;
+  background: rgba(251,191,36,0.1);
+  border: 1px solid rgba(251,191,36,0.2);
+  border-radius: 8px;
+  padding: 0.3rem 0.75rem;
+}
