@@ -40,3 +40,77 @@
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.header__user {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  padding: 0.25rem 0.5rem 0.25rem 0.25rem;
+}
+
+.header__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.4);
+}
+
+.header__user-name {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #e2e8f0;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header__btn {
+  border: none;
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.header__btn--signin {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  color: #ffffff;
+  padding: 0.45rem 1rem;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+}
+
+.header__btn--signin:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.header__btn--signout {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.header__btn--signout:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.2);
+}

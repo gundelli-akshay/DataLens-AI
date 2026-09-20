@@ -200,11 +200,17 @@ class TestRAGPipelineEndToEnd(unittest.TestCase):
     """Integration tests using generated PDF and DOCX documents."""
 
     def setUp(self):
+        from app.core.auth import get_current_user
+        from app.db.models import User
+        self.test_user = User(id=1, email="test12@example.com", full_name="Test User", auth_provider="email")
+        app.dependency_overrides[get_current_user] = lambda: self.test_user
         self.client = TestClient(app)
         self.temp_files: list[Path] = []
         vector_index.clear()
 
     def tearDown(self):
+        from app.core.auth import get_current_user
+        app.dependency_overrides.pop(get_current_user, None)
         vector_index.clear()
         for p in self.temp_files:
             if p.exists():

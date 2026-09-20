@@ -24,3 +24,8 @@ sentence-transformers==6.1.0
 # Added as the project grows
 # sqlalchemy
 # psycopg2-binary
+
+# Authentication & Security
+bcrypt==5.0.0
+pyjwt==2.14.0
+google-auth==2.58.0

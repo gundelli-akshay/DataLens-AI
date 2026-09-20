@@ -34,7 +34,13 @@ class Settings(BaseSettings):
 
 
     # Database
-    database_url: str = "sqlite:///./datalens.db"  # Default to local sqlite
+    database_url: str = "sqlite:///./datalens.db"
+
+    # Auth & Security
+    google_client_id: str = ""
+    jwt_secret_key: str = "datalens-dev-super-secret-jwt-key-32-chars-minimum!"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 1440  # Default to local sqlite
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),

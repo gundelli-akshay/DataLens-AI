@@ -1,7 +1,10 @@
 import ApiStatus from "./ApiStatus";
 import "./Header.css";
 
-export default function Header({ apiStatus }) {
+export default function Header({ apiStatus, user, onOpenAuth, onSignOut }) {
+  const displayName = user?.full_name || user?.email?.split("@")[0] || "User";
+  const initial = displayName.charAt(0).toUpperCase();
+
   return (
     <header className="header">
       <div className="header__inner">
@@ -21,7 +24,38 @@ export default function Header({ apiStatus }) {
           </div>
           <span className="header__name">DataLens AI</span>
         </div>
-        <ApiStatus status={apiStatus} />
+
+        <div className="header__actions">
+          <ApiStatus status={apiStatus} />
+
+          {user ? (
+            <div className="header__user">
+              <div className="header__avatar" title={user.email}>
+                {initial}
+              </div>
+              <span className="header__user-name" title={user.email}>
+                {displayName}
+              </span>
+              <button
+                type="button"
+                className="header__btn header__btn--signout"
+                onClick={onSignOut}
+                aria-label="Sign Out"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="header__btn header__btn--signin"
+              onClick={onOpenAuth}
+              aria-label="Sign In or Register"
+            >
+              Sign In
+            </button>
+          )}
+        </div>
       </div>
     </header>
   );

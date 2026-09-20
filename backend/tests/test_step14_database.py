@@ -1,3 +1,9 @@
+import sys
+from pathlib import Path
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -6,7 +12,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.main import app
 from app.db.session import Base, get_db
-from app.db.models import Document, ChatMessage
+from app.db.models import Document, ChatMessage, User
+from app.core.auth import get_current_user
 
 # Use in-memory SQLite for tests
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
@@ -35,8 +42,12 @@ def db_session():
     Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture(scope="module")
-def client():
+def client(db_session):
+    test_user = User(id=1, email="test14@example.com", full_name="Test 14 User", auth_provider="email")
+    db_session.add(test_user)
+    db_session.commit()
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: test_user
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

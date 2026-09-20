@@ -6,23 +6,27 @@ Endpoints:
 - POST /documents/index: Extract, split into overlapping chunks, embed, and store in-memory
 - POST /documents/retrieve: Semantic search returning top relevant chunks with source references (page/para)
 - POST /documents/clear-index: Reset in-memory vector index
+- POST /documents/chat: Grounded Q&A over indexed PDF/DOCX using RAG + Groq LLM
+- GET /documents/my-documents: List documents uploaded by the authenticated user
 
 Supports: PDF, DOCX
 Rejects: CSV, XLSX (415), unsupported file types (415)
+Protected: All document and chat endpoints require authentication.
 """
 
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Optional
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, HTTPException, Request, Depends, status
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from sqlalchemy.orm import Session
+from app.core.auth import get_current_user
 from app.db.session import get_db
-from app.db.models import Document, ChatMessage
+from app.db.models import Document, ChatMessage, User
 from app.services.document_extraction import (
     extract_document,
     extract_text_from_pdf,
@@ -44,28 +48,28 @@ TABULAR_EXTENSIONS = {".csv", ".xlsx"}
 
 
 class DocumentExtractRequest(BaseModel):
-    saved_filename: str | None = None
-    filename: str | None = None
+    saved_filename: Optional[str] = None
+    filename: Optional[str] = None
 
 
 class DocumentIndexRequest(BaseModel):
-    saved_filename: str | None = None
-    filename: str | None = None
+    saved_filename: Optional[str] = None
+    filename: Optional[str] = None
     chunk_size: int = Field(default=DEFAULT_CHUNK_SIZE, ge=50, le=5000)
     chunk_overlap: int = Field(default=DEFAULT_CHUNK_OVERLAP, ge=0, le=2000)
 
 
 class DocumentChatRequest(BaseModel):
     question: str
-    filename: str | None = None
-    saved_filename: str | None = None
+    filename: Optional[str] = None
+    saved_filename: Optional[str] = None
     top_k: int = Field(default=4, ge=1, le=20)
 
 
 class DocumentRetrieveRequest(BaseModel):
     query: str
     top_k: int = Field(default=5, ge=1, le=50)
-    filename: str | None = None
+    filename: Optional[str] = None
 
 
 def _safe_filename(original: str) -> str:
@@ -83,8 +87,8 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
     multipart/form-data or JSON body.
     """
     content_type = request.headers.get("content-type", "")
-    saved_filename: str | None = None
-    file_bytes: bytes | None = None
+    saved_filename: Optional[str] = None
+    file_bytes: Optional[bytes] = None
     original_filename: str = ""
     extra_params: dict[str, Any] = {}
 
@@ -171,15 +175,44 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
     return file_path, original_filename, extra_params
 
 
+@router.get("/my-documents")
+async def list_my_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all documents owned by the authenticated user."""
+    docs = (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.uploaded_at.desc())
+        .all()
+    )
+    return {
+        "status": "success",
+        "count": len(docs),
+        "documents": [
+            {
+                "id": doc.id,
+                "original_filename": doc.original_filename,
+                "saved_filename": doc.saved_filename,
+                "file_type": doc.file_type,
+                "file_size_bytes": doc.file_size_bytes,
+                "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+            }
+            for doc in docs
+        ],
+    }
+
+
 @router.post("/extract")
 @router.post("/")
-async def process_document(request: Request):
+async def extract_document_endpoint(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
     """
-    Process an uploaded PDF or DOCX file and extract clean text with metadata.
-
-    Supports:
-      - JSON body: {"saved_filename": "<uuid>_file.pdf"}
-      - Multipart form-data: file upload
+    Extract raw text and document structure from an uploaded PDF or DOCX file.
+    Protected: requires authentication.
     """
     file_path, original_filename, _ = await _resolve_document_file(request)
 
@@ -195,16 +228,33 @@ async def process_document(request: Request):
 
 
 @router.post("/index")
-async def index_document_endpoint(request: Request):
+async def index_document_endpoint(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Extract text from a PDF or DOCX document, split into overlapping chunks,
     compute local embeddings via sentence-transformers, and index in memory.
-
-    Supports:
-      - Multipart form: file upload (optional chunk_size, chunk_overlap)
-      - JSON body: {"saved_filename": "...", "chunk_size": 500, "chunk_overlap": 100}
+    Protected: verifies document ownership if registered in database.
     """
     file_path, original_filename, extra_params = await _resolve_document_file(request)
+
+    # Check ownership in DB if record exists
+    target_name = file_path.name
+    doc_record = (
+        db.query(Document)
+        .filter(
+            (Document.saved_filename == target_name)
+            | (Document.original_filename == target_name)
+        )
+        .first()
+    )
+    if doc_record and doc_record.user_id is not None and doc_record.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this document.",
+        )
 
     chunk_size = extra_params.get("chunk_size", DEFAULT_CHUNK_SIZE)
     chunk_overlap = extra_params.get("chunk_overlap", DEFAULT_CHUNK_OVERLAP)
@@ -241,22 +291,34 @@ async def index_document_endpoint(request: Request):
 
 
 @router.post("/retrieve")
-async def retrieve_endpoint(payload: DocumentRetrieveRequest):
+async def retrieve_endpoint(
+    payload: DocumentRetrieveRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Retrieve top relevant chunks matching a semantic query.
-
-    Request JSON:
-      - query: query string (required)
-      - top_k: maximum number of chunks to return (default: 5)
-      - filename: optional filter to limit search to a specific document
-
-    Returns:
-      Matching chunks sorted descending by cosine similarity score,
-      including source references (page_number or paragraph_number).
+    Protected: checks document ownership if filename is provided.
     """
     query = payload.query.strip() if payload.query else ""
     if not query:
         raise HTTPException(status_code=400, detail="Query string cannot be empty.")
+
+    if payload.filename:
+        target_name = payload.filename.strip()
+        doc_record = (
+            db.query(Document)
+            .filter(
+                (Document.saved_filename == target_name)
+                | (Document.original_filename == target_name)
+            )
+            .first()
+        )
+        if doc_record and doc_record.user_id is not None and doc_record.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have access to this document.",
+            )
 
     try:
         results = retrieve_relevant_chunks(
@@ -279,7 +341,9 @@ async def retrieve_endpoint(payload: DocumentRetrieveRequest):
 
 
 @router.post("/clear-index")
-async def clear_index_endpoint():
+async def clear_index_endpoint(
+    current_user: User = Depends(get_current_user),
+):
     """Clear all stored embeddings and chunks from the in-memory vector index."""
     vector_index.clear()
     return {
@@ -288,11 +352,17 @@ async def clear_index_endpoint():
         "total_indexed_chunks": 0,
     }
 
+
 @router.post("/chat")
-async def chat_document_endpoint(payload: DocumentChatRequest, db: Session = Depends(get_db)):
+async def chat_document_endpoint(
+    payload: DocumentChatRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Answer user questions about an uploaded PDF/DOCX document using RAG retrieval + Groq LLM.
     Strictly grounds answers in the retrieved document chunks and cites page/paragraph sources.
+    Protected: validates document ownership and associates chat messages with authenticated user.
     """
     question = (payload.question or "").strip()
     if not question:
@@ -305,6 +375,21 @@ async def chat_document_endpoint(payload: DocumentChatRequest, db: Session = Dep
             detail="A document filename or saved_filename must be provided.",
         )
     target_name = target_name.strip()
+
+    # Document ownership validation
+    doc_record = (
+        db.query(Document)
+        .filter(
+            (Document.saved_filename == target_name)
+            | (Document.original_filename == target_name)
+        )
+        .first()
+    )
+    if doc_record and doc_record.user_id is not None and doc_record.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this document.",
+        )
 
     # If no chunks match target_name in vector_index, check if file exists on disk to auto-index
     def _has_chunks(fn: str) -> bool:
@@ -322,8 +407,6 @@ async def chat_document_endpoint(payload: DocumentChatRequest, db: Session = Dep
 
     if not _has_chunks(target_name):
         file_to_index = None
-        orig_name = target_name
-
         candidate = settings.upload_dir_path / target_name
         if candidate.exists() and candidate.is_file():
             file_to_index = candidate
@@ -337,12 +420,14 @@ async def chat_document_endpoint(payload: DocumentChatRequest, db: Session = Dep
 
         if file_to_index:
             try:
-                orig_name = re.sub(r"^[0-9a-f]{32}_", "", file_to_index.name, count=1) or file_to_index.name
+                orig_name = (
+                    re.sub(r"^[0-9a-f]{32}_", "", file_to_index.name, count=1)
+                    or file_to_index.name
+                )
                 extraction_result = extract_document(file_to_index, orig_name)
                 extraction_result["saved_filename"] = file_to_index.name
                 index_document_data(extraction_result, index=vector_index)
-            except Exception as e:
-                # If extraction fails, continue to retrieval or error
+            except Exception:
                 pass
 
     # Retrieve relevant chunks matching query
@@ -358,38 +443,33 @@ async def chat_document_endpoint(payload: DocumentChatRequest, db: Session = Dep
 
     # Generate answer via Groq LLM service
     try:
-
         answer_data = generate_rag_answer(question=question, chunks=retrieved_chunks)
-        
-        # --- Save Chat Messages to DB ---
-        # Look up document by target_name
-        doc_record = db.query(Document).filter(
-            (Document.saved_filename == target_name) | 
-            (Document.original_filename == target_name)
-        ).first()
-        
+
+        # --- Save Chat Messages to DB associated with current_user and document ---
         if doc_record:
-            # Insert user question
+            # Associate document with user if it had no owner
+            if doc_record.user_id is None:
+                doc_record.user_id = current_user.id
+
             user_msg = ChatMessage(
                 document_id=doc_record.id,
+                user_id=current_user.id,
                 role="user",
-                content=question
+                content=question,
             )
             db.add(user_msg)
-            
-            # Insert assistant answer
+
             assistant_msg = ChatMessage(
                 document_id=doc_record.id,
+                user_id=current_user.id,
                 role="assistant",
                 content=answer_data["answer"],
-                sources=answer_data["sources"]
+                sources=answer_data["sources"],
             )
             db.add(assistant_msg)
             db.commit()
-        # --------------------------------
-        
-        return {
 
+        return {
             "status": "success",
             "question": question,
             "filename": target_name,

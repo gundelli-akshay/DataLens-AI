@@ -20,7 +20,9 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.db.models import Document
+from app.db.models import Document, User
+from app.core.auth import get_optional_current_user
+from typing import Optional
 
 from app.core.config import settings
 
@@ -67,7 +69,7 @@ def _human_size(n: int) -> str:
 
 
 @router.post("/")
-async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: Optional[User] = Depends(get_optional_current_user)):
     """
     Upload a single file (CSV, XLSX, PDF, or DOCX).
 
@@ -115,6 +117,7 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
     #  5b. Save to DB (for PDF/DOCX) 
     if suffix in {".pdf", ".docx"}:
         doc_record = Document(
+            user_id=current_user.id if current_user else None,
             original_filename=original_name,
             saved_filename=saved_name,
             file_type=EXTENSION_LABELS[suffix],

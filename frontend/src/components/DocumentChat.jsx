@@ -8,7 +8,7 @@ const SUGGESTIONS = [
   "What are the major conclusions or recommendations?",
 ];
 
-export default function DocumentChat({ document }) {
+export default function DocumentChat({ document, user, onRequireAuth }) {
   const fileName = document?.original_filename || document?.saved_filename || "Document";
   const fileType = document?.file_type || "PDF";
   const savedFilename = document?.saved_filename;
@@ -52,6 +52,12 @@ export default function DocumentChat({ document }) {
     const question = (queryToSend || inputQuery).trim();
     if (!question || isLoading) return;
 
+    if (!user && onRequireAuth) {
+      setErrorMsg("Please sign in to chat with documents.");
+      onRequireAuth();
+      return;
+    }
+
     setErrorMsg("");
     setInputQuery("");
 
@@ -82,7 +88,13 @@ export default function DocumentChat({ document }) {
 
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
-      setErrorMsg(err.message || "Failed to retrieve an answer. Please try again.");
+      const msg = err.message || "";
+      if (msg.includes("credentials") || msg.includes("authenticated") || msg.includes("401")) {
+        setErrorMsg("Please sign in to chat with documents.");
+        if (onRequireAuth) onRequireAuth();
+      } else {
+        setErrorMsg(msg || "Failed to retrieve an answer. Please try again.");
+      }
     } finally {
       setIsLoading(false);
       setTimeout(() => inputRef.current?.focus(), 100);

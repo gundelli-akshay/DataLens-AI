@@ -155,7 +155,16 @@ class TestStep11DocumentExtractionEndpoint(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from app.core.auth import get_current_user
+        from app.db.models import User
+        cls.test_user = User(id=1, email="test11@example.com", full_name="Test User", auth_provider="email")
+        app.dependency_overrides[get_current_user] = lambda: cls.test_user
         cls.client = TestClient(app)
+
+    @classmethod
+    def tearDownClass(cls):
+        from app.core.auth import get_current_user
+        app.dependency_overrides.pop(get_current_user, None)
 
     def setUp(self):
         self.temp_files: list[Path] = []
