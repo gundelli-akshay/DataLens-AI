@@ -87,3 +87,8 @@ desktop.ini
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# ─── Database ────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3

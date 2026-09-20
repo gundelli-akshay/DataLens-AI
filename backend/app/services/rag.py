@@ -75,6 +75,7 @@ def chunk_extracted_document(
     doc_data: dict[str, Any],
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    user_id: Any = None,
 ) -> list[dict[str, Any]]:
     """
     Split extracted document text (from Step 11 extraction) into overlapping chunks
@@ -112,7 +113,9 @@ def chunk_extracted_document(
                     "saved_filename": saved_filename,
                     "file_type": "PDF",
                     "page_number": page_num,
+                    "page": page_num,
                     "paragraph_number": None,
+                    "user_id": user_id,
                     "chunk_index": chunk_counter,
                     "character_count": len(chunk_text),
                     "word_count": len(chunk_text.split()),
@@ -134,6 +137,7 @@ def chunk_extracted_document(
                     "file_type": "DOCX",
                     "page_number": None,
                     "paragraph_number": para_num,
+                    "user_id": user_id,
                     "chunk_index": chunk_counter,
                     "character_count": len(chunk_text),
                     "word_count": len(chunk_text.split()),
@@ -152,7 +156,9 @@ def chunk_extracted_document(
                 "saved_filename": saved_filename,
                 "file_type": file_type,
                 "page_number": 1 if file_type == "PDF" else None,
+                "page": 1 if file_type == "PDF" else None,
                 "paragraph_number": 1 if file_type == "DOCX" else None,
+                "user_id": user_id,
                 "chunk_index": chunk_counter,
                 "character_count": len(chunk_text),
                 "word_count": len(chunk_text.split()),
@@ -240,6 +246,7 @@ class InMemoryVectorIndex:
         query_embedding: np.ndarray,
         top_k: int = 5,
         filename: str | None = None,
+        user_id: Any = None,
     ) -> list[dict[str, Any]]:
         """
         Retrieve the top_k most relevant chunks for a given query embedding.
@@ -260,64 +267,69 @@ class InMemoryVectorIndex:
         if q_norm > 0:
             q = q / q_norm
 
-        if filename:
-            def _matches(c: dict[str, Any]) -> bool:
-                c_fn = c.get("filename")
-                c_sfn = c.get("saved_filename")
-                if c_fn == filename or c_sfn == filename:
-                    return True
-                target_base = Path(filename).name
-                if c_fn and (Path(c_fn).name == target_base or Path(c_fn).name.endswith(f"_{target_base}")):
-                    return True
-                if c_sfn and (Path(c_sfn).name == target_base or Path(c_sfn).name.endswith(f"_{target_base}")):
-                    return True
+        def _user_matches(c: dict[str, Any]) -> bool:
+            if user_id is None:
+                return True
+            c_uid = c.get("user_id")
+            return c_uid is None or c_uid == user_id
+
+        def _doc_matches(c: dict[str, Any]) -> bool:
+            if not _user_matches(c):
                 return False
+            if not filename:
+                return True
+            c_fn = c.get("filename")
+            c_sfn = c.get("saved_filename")
+            if c_fn == filename or c_sfn == filename:
+                return True
+            target_base = Path(filename).name
+            if c_fn and (Path(c_fn).name == target_base or Path(c_fn).name.endswith(f"_{target_base}")):
+                return True
+            if c_sfn and (Path(c_sfn).name == target_base or Path(c_sfn).name.endswith(f"_{target_base}")):
+                return True
+            return False
 
-            indices = [i for i, c in enumerate(self.chunks) if _matches(c)]
-            if not indices:
-                return []
-            sub_embeddings = self.embeddings[indices]
-            sub_norms = np.linalg.norm(sub_embeddings, axis=1, keepdims=True)
-            sub_norms[sub_norms == 0] = 1.0
-            norm_sub_embeddings = sub_embeddings / sub_norms
-            similarities = np.dot(norm_sub_embeddings, q)
+        indices = [i for i, c in enumerate(self.chunks) if _doc_matches(c)]
+        if not indices:
+            return []
 
-            ranked_order = np.argsort(-similarities)
-            k = min(top_k, len(indices))
-            results: list[dict[str, Any]] = []
+        sub_embeddings = self.embeddings[indices]
+        sub_norms = np.linalg.norm(sub_embeddings, axis=1, keepdims=True)
+        sub_norms[sub_norms == 0] = 1.0
+        norm_sub_embeddings = sub_embeddings / sub_norms
+        similarities = np.dot(norm_sub_embeddings, q)
 
-            for r_i in ranked_order[:k]:
-                orig_i = indices[r_i]
-                chunk_copy = dict(self.chunks[orig_i])
-                chunk_copy["score"] = round(float(similarities[r_i]), 4)
-                results.append(chunk_copy)
+        ranked_order = np.argsort(-similarities)
+        k = min(top_k, len(indices))
+        results: list[dict[str, Any]] = []
 
-            return results
+        for r_i in ranked_order[:k]:
+            orig_i = indices[r_i]
+            chunk_copy = dict(self.chunks[orig_i])
+            chunk_copy["score"] = round(float(similarities[r_i]), 4)
+            results.append(chunk_copy)
+
+        return results
+
+    def clear(self, user_id: Any = None) -> None:
+        """Clear indexed documents, scoping to user_id if provided."""
+        if user_id is None:
+            self.chunks = []
+            self.embeddings = None
+            return
+
+        keep_indices = [i for i, c in enumerate(self.chunks) if c.get("user_id") != user_id]
+        self.chunks = [self.chunks[i] for i in keep_indices]
+        if not self.chunks or self.embeddings is None:
+            self.embeddings = None
         else:
-            norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
-            norms[norms == 0] = 1.0
-            norm_embeddings = self.embeddings / norms
-            similarities = np.dot(norm_embeddings, q)
+            self.embeddings = self.embeddings[keep_indices]
 
-            k = min(top_k, len(self.chunks))
-            ranked_indices = np.argsort(-similarities)[:k]
-
-            results = []
-            for idx in ranked_indices:
-                chunk_copy = dict(self.chunks[idx])
-                chunk_copy["score"] = round(float(similarities[idx]), 4)
-                results.append(chunk_copy)
-
-            return results
-
-    def clear(self) -> None:
-        """Clear all indexed documents and embeddings."""
-        self.chunks = []
-        self.embeddings = None
-
-    def count(self) -> int:
-        """Return total number of chunks currently indexed."""
-        return len(self.chunks)
+    def count(self, user_id: Any = None) -> int:
+        """Return total number of chunks currently indexed, optionally filtered by user_id."""
+        if user_id is None:
+            return len(self.chunks)
+        return sum(1 for c in self.chunks if c.get("user_id") == user_id)
 
 
 # Global singleton vector index for in-memory RAG
@@ -328,6 +340,7 @@ def index_document_data(
     doc_data: dict[str, Any],
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    user_id: Any = None,
     index: InMemoryVectorIndex = vector_index,
 ) -> dict[str, Any]:
     """
@@ -342,7 +355,7 @@ def index_document_data(
     Returns:
         Summary dict containing indexing metadata and chunk count.
     """
-    chunks = chunk_extracted_document(doc_data, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    chunks = chunk_extracted_document(doc_data, chunk_size=chunk_size, chunk_overlap=chunk_overlap, user_id=user_id)
     if not chunks:
         return {
             "status": "success",
@@ -371,6 +384,7 @@ def retrieve_relevant_chunks(
     query: str,
     top_k: int = 5,
     filename: str | None = None,
+    user_id: Any = None,
     index: InMemoryVectorIndex = vector_index,
 ) -> list[dict[str, Any]]:
     """
@@ -389,4 +403,4 @@ def retrieve_relevant_chunks(
         return []
 
     q_embedding = EmbeddingService.encode(query.strip())
-    return index.search(q_embedding, top_k=top_k, filename=filename)
+    return index.search(q_embedding, top_k=top_k, filename=filename, user_id=user_id)

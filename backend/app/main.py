@@ -2,14 +2,17 @@
 main.py - DataLens AI FastAPI application entry point.
 """
 
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api import health, upload, analyze, insights, documents, auth
-from app.core.config import settings
-
+from app.core.config import settings, DEFAULT_DEV_JWT_SECRET
 from app.db.session import engine, Base
 from app.db import models
+
+logger = logging.getLogger("datalens.main")
 
 # Create database tables
 Base.metadata.create_all(bind=engine)
@@ -32,6 +35,9 @@ try:
 except Exception:
     pass
 
+# Production safety check for default secrets
+if settings.is_production and settings.jwt_secret_key == DEFAULT_DEV_JWT_SECRET:
+    logger.critical("SECURITY ALERT: Running in production with default JWT secret key! Change JWT_SECRET_KEY in production.")
 
 # --- App instance ---
 app = FastAPI(
@@ -41,9 +47,10 @@ app = FastAPI(
 )
 
 # --- CORS ---
+# Safe configured origins instead of wildcard with credentials
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,12 +64,6 @@ app.include_router(analyze.router)
 app.include_router(insights.router)
 app.include_router(documents.router)
 
-
-import logging
-from fastapi import Request
-from fastapi.responses import JSONResponse
-
-logger = logging.getLogger("datalens.main")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

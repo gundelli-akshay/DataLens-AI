@@ -49,7 +49,7 @@ def extract_text_from_pdf(file_path: Path | str, original_filename: str = "") ->
     try:
         doc = pymupdf.open(str(path))
     except Exception as e:
-        raise ValueError(f"Unable to read PDF file '{filename}': {str(e)}") from e
+        raise ValueError(f"Unable to read PDF file '{filename}'. The file may be corrupt or not a valid PDF.") from None
 
     try:
         pages: list[dict[str, Any]] = []
@@ -122,7 +122,7 @@ def extract_text_from_docx(file_path: Path | str, original_filename: str = "") -
     try:
         doc = docx.Document(str(path))
     except Exception as e:
-        raise ValueError(f"Unable to read DOCX file '{filename}': {str(e)}") from e
+        raise ValueError(f"Unable to read DOCX file '{filename}'. The file may be corrupt or not a valid Word document.") from None
 
     paragraphs: list[dict[str, Any]] = []
     full_text_chunks: list[str] = []

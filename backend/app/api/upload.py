@@ -1,6 +1,7 @@
 import logging
+import urllib.parse
 """
-api/upload.py — File upload endpoint.
+api/upload.py - File upload endpoint.
 
 POST /upload/
   Accepts:  multipart/form-data with a single `file` field
@@ -9,29 +10,29 @@ POST /upload/
   Returns:   upload metadata (no local paths exposed)
 
 Security notes:
-  - Filenames are sanitised and prefixed with a UUID to prevent
-    path-traversal attacks and filename collisions.
+  - Filenames are sanitised (null bytes stripped, directory components removed)
+    and prefixed with a UUID to prevent path-traversal attacks and collisions.
+  - Upload stream is read in chunks to prevent memory exhaustion (DoS).
   - File content is never executed.
   - Local filesystem paths are never returned to the client.
 """
 
 import uuid
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Document, User
 from app.core.auth import get_optional_current_user
-from typing import Optional
-
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 
-# ── Allowed file types ─────────────────────────────────────────
+# -- Allowed file types -----------------------------------------
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".pdf", ".docx"}
 
 EXTENSION_LABELS = {
@@ -41,20 +42,26 @@ EXTENSION_LABELS = {
     ".docx": "DOCX",
 }
 
-# ── Max file size ──────────────────────────────────────────────
+# -- Max file size ----------------------------------------------
 MAX_BYTES = settings.max_upload_size_mb * 1024 * 1024
+STREAM_CHUNK_SIZE = 1024 * 1024  # 1 MB chunk
+
+
+def _clean_input_filename(name: str) -> str:
+    """Strip null bytes, escaped nulls, and URL-encoded null representations."""
+    unquoted = urllib.parse.unquote(name or "upload")
+    return unquoted.replace(chr(0), "").replace("%00", "").replace("\\0", "").replace("\\x00", "")
 
 
 def _safe_filename(original: str) -> str:
     """
     Return a safe, unique filename.
-
-    Steps:
-    1. Strip any directory components (prevents path traversal).
+    1. Strip null bytes and directory components (prevents path traversal).
     2. Replace non-alphanumeric characters (except . - _) with underscores.
     3. Prefix with a UUID hex to prevent collisions and overwrite attacks.
     """
-    base = Path(original).name                        # strip directory parts
+    clean_original = _clean_input_filename(original)
+    base = Path(clean_original).name
     safe = "".join(
         c if (c.isalnum() or c in (".", "-", "_")) else "_"
         for c in base
@@ -72,16 +79,19 @@ def _human_size(n: int) -> str:
 
 
 @router.post("/")
-async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db), current_user: Optional[User] = Depends(get_optional_current_user)):
+async def upload_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_current_user),
+):
     """
     Upload a single file (CSV, XLSX, PDF, or DOCX).
-
     Returns upload metadata. Does NOT return local filesystem paths.
     """
-
-    # ── 1. Extension validation ────────────────────────────────
+    # -- 1. Extension validation --------------------------------
     original_name = file.filename or "upload"
-    suffix = Path(original_name).suffix.lower()
+    clean_name = _clean_input_filename(original_name)
+    suffix = Path(clean_name).suffix.lower()
 
     if suffix not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -92,49 +102,56 @@ async def upload_file(file: UploadFile = File(...), db: Session = Depends(get_db
             ),
         )
 
-    # ── 2. Read into memory ────────────────────────────────────
-    content = await file.read()
+    # -- 2. Chunked read into memory to prevent OOM DoS ---------
+    chunks = []
+    total_bytes = 0
 
-    # ── 3. Empty-file guard ────────────────────────────────────
+    while True:
+        chunk = await file.read(STREAM_CHUNK_SIZE)
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+        if total_bytes > MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"File is too large ({_human_size(total_bytes)}). "
+                    f"Maximum allowed size is {settings.max_upload_size_mb} MB."
+                ),
+            )
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
+
+    # -- 3. Empty-file guard ------------------------------------
     if len(content) == 0:
         raise HTTPException(
             status_code=400,
             detail="The uploaded file is empty. Please choose a valid file.",
         )
 
-    # ── 4. Size validation ─────────────────────────────────────
-    if len(content) > MAX_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=(
-                f"File is too large ({_human_size(len(content))}). "
-                f"Maximum allowed size is {settings.max_upload_size_mb} MB."
-            ),
-        )
-
-    # ── 5. Save to disk ────────────────────────────────────────
-    saved_name = _safe_filename(original_name)
+    # -- 4. Save to disk ----------------------------------------
+    saved_name = _safe_filename(clean_name)
     upload_path = settings.upload_dir_path / saved_name
     upload_path.write_bytes(content)
 
-    #  5b. Save to DB (for PDF/DOCX) 
+    # -- 5. Save to DB (for PDF/DOCX) ---------------------------
     if suffix in {".pdf", ".docx"}:
         doc_record = Document(
             user_id=current_user.id if current_user else None,
-            original_filename=original_name,
+            original_filename=clean_name,
             saved_filename=saved_name,
             file_type=EXTENSION_LABELS[suffix],
-            file_size_bytes=len(content)
+            file_size_bytes=len(content),
         )
         db.add(doc_record)
         db.commit()
         db.refresh(doc_record)
 
-
-    # ── 6. Return metadata (no local paths) ────────────────────
+    # -- 6. Return metadata (no local paths) --------------------
     return {
         "status":            "success",
-        "original_filename": original_name,
+        "original_filename": clean_name,
         "saved_filename":    saved_name,
         "file_type":         EXTENSION_LABELS[suffix],
         "file_size_bytes":   len(content),

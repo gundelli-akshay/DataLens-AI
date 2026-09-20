@@ -368,9 +368,9 @@ def analyze_csv(file_path: Path, original_filename: str) -> dict:
                 on_bad_lines="skip",
             )
         except Exception as exc:
-            return {"status": "error", "message": f"Could not read CSV file: {exc}"}
+            return {"status": "error", "message": f"Could not read CSV file '{original_filename}'. The file format may be invalid or corrupt."}
     except Exception as exc:
-        return {"status": "error", "message": f"Could not read CSV file: {exc}"}
+        return {"status": "error", "message": f"Could not read CSV file '{original_filename}'. The file format may be invalid or corrupt."}
 
     if df.empty:
         return {
@@ -391,7 +391,7 @@ def analyze_xlsx(file_path: Path, original_filename: str) -> dict:
         sheet_name = xl.sheet_names[0]
         df = xl.parse(sheet_name)
     except Exception as exc:
-        return {"status": "error", "message": f"Could not read XLSX file: {exc}"}
+        return {"status": "error", "message": f"Could not read XLSX file '{original_filename}'. The file format may be invalid or corrupt."}
 
     if df.empty:
         return {

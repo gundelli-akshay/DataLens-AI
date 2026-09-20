@@ -6,13 +6,11 @@ Endpoints:
 - POST /documents/extract (or POST /documents/): Extract raw text & metadata from PDF/DOCX
 - POST /documents/index: Extract, split into overlapping chunks, embed, and store in-memory
 - POST /documents/retrieve: Semantic search returning top relevant chunks with source references (page/para)
-- POST /documents/clear-index: Reset in-memory vector index
+- POST /documents/clear-index: Reset in-memory vector index for current user
 - POST /documents/chat: Grounded Q&A over indexed PDF/DOCX using RAG + Groq LLM
 - GET /documents/my-documents: List documents uploaded by the authenticated user
 
-Supports: PDF, DOCX
-Rejects: CSV, XLSX (415), unsupported file types (415)
-Protected: All document and chat endpoints require authentication.
+Protected: All document and chat endpoints require authentication and enforce multi-tenant isolation.
 """
 
 from pathlib import Path
@@ -48,6 +46,10 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx"}
 TABULAR_EXTENSIONS = {".csv", ".xlsx"}
+EXTENSION_LABELS = {
+    ".pdf": "PDF",
+    ".docx": "DOCX",
+}
 
 
 class DocumentExtractRequest(BaseModel):
@@ -63,20 +65,21 @@ class DocumentIndexRequest(BaseModel):
 
 
 class DocumentChatRequest(BaseModel):
-    question: str
+    question: str = Field(..., max_length=2000)
     filename: Optional[str] = None
     saved_filename: Optional[str] = None
     top_k: int = Field(default=4, ge=1, le=20)
 
 
 class DocumentRetrieveRequest(BaseModel):
-    query: str
+    query: str = Field(..., max_length=2000)
     top_k: int = Field(default=5, ge=1, le=50)
     filename: Optional[str] = None
 
 
 def _safe_filename(original: str) -> str:
-    base = Path(original).name
+    clean = (original or "document").replace("\x00", "")
+    base = Path(clean).name
     safe = "".join(
         c if (c.isalnum() or c in (".", "-", "_")) else "_"
         for c in base
@@ -84,16 +87,18 @@ def _safe_filename(original: str) -> str:
     return f"{uuid.uuid4().hex}_{safe}"
 
 
-async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str, Any]]:
+async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str, Any], bool]:
     """
-    Helper to extract file_path, original_filename, and parameters from either
-    multipart/form-data or JSON body.
+    Helper to extract file_path, original_filename, parameters, and is_temporary flag
+    from either multipart/form-data or JSON body.
+    Returns: (file_path, original_filename, extra_params, is_temporary)
     """
     content_type = request.headers.get("content-type", "")
     saved_filename: Optional[str] = None
     file_bytes: Optional[bytes] = None
     original_filename: str = ""
     extra_params: dict[str, Any] = {}
+    is_temporary: bool = False
 
     if "multipart/form-data" in content_type:
         form = await request.form()
@@ -132,7 +137,8 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
         )
 
     if file_bytes is not None:
-        suffix = Path(original_filename).suffix.lower()
+        clean_name = (original_filename or "document").replace("\x00", "")
+        suffix = Path(clean_name).suffix.lower()
         if suffix in TABULAR_EXTENSIONS:
             raise HTTPException(
                 status_code=415,
@@ -144,12 +150,15 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
                 detail=f"'{suffix}' is not a supported document format. Only PDF and DOCX files are supported.",
             )
 
-        temp_name = _safe_filename(original_filename)
+        temp_name = _safe_filename(clean_name)
         file_path = settings.upload_dir_path / temp_name
         file_path.write_bytes(file_bytes)
         safe_name = temp_name
+        is_temporary = True
     else:
         assert saved_filename is not None
+        if "\x00" in saved_filename:
+            raise HTTPException(status_code=400, detail="Invalid filename.")
         safe_name = Path(saved_filename).name
         if safe_name != saved_filename:
             raise HTTPException(status_code=400, detail="Invalid filename.")
@@ -175,7 +184,7 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
 
         original_filename = re.sub(r"^[0-9a-f]{32}_", "", safe_name, count=1) or safe_name
 
-    return file_path, original_filename, extra_params
+    return file_path, original_filename, extra_params, is_temporary
 
 
 @router.get("/my-documents")
@@ -211,13 +220,30 @@ async def list_my_documents(
 @router.post("/")
 async def extract_document_endpoint(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
     Extract raw text and document structure from an uploaded PDF or DOCX file.
-    Protected: requires authentication.
+    Protected: validates document ownership and cleans up temporary direct uploads.
     """
-    file_path, original_filename, _ = await _resolve_document_file(request)
+    file_path, original_filename, _, is_temporary = await _resolve_document_file(request)
+
+    # Ownership check for pre-saved files
+    target_name = file_path.name
+    doc_record = (
+        db.query(Document)
+        .filter(
+            (Document.saved_filename == target_name)
+            | (Document.original_filename == target_name)
+        )
+        .first()
+    )
+    if doc_record and doc_record.user_id is not None and doc_record.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this document.",
+        )
 
     try:
         return extract_document(file_path, original_filename)
@@ -229,6 +255,13 @@ async def extract_document_endpoint(
             status_code=500,
             detail="An unexpected internal server error occurred while extracting text from the document.",
         )
+    finally:
+        # Clean up temporary direct upload file after extraction
+        if is_temporary and file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception:
+                pass
 
 
 @router.post("/index")
@@ -240,9 +273,9 @@ async def index_document_endpoint(
     """
     Extract text from a PDF or DOCX document, split into overlapping chunks,
     compute local embeddings via sentence-transformers, and index in memory.
-    Protected: verifies document ownership if registered in database.
+    Protected: verifies document ownership and tags chunks with current_user.id.
     """
-    file_path, original_filename, extra_params = await _resolve_document_file(request)
+    file_path, original_filename, extra_params, is_temporary = await _resolve_document_file(request)
 
     # Check ownership in DB if record exists
     target_name = file_path.name
@@ -259,6 +292,19 @@ async def index_document_endpoint(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this document.",
         )
+
+    # If direct upload, create document record associated with current_user
+    if is_temporary and not doc_record:
+        doc_record = Document(
+            user_id=current_user.id,
+            original_filename=original_filename,
+            saved_filename=file_path.name,
+            file_type=EXTENSION_LABELS.get(file_path.suffix.lower(), "DOCUMENT"),
+            file_size_bytes=file_path.stat().st_size if file_path.exists() else None,
+        )
+        db.add(doc_record)
+        db.commit()
+        db.refresh(doc_record)
 
     chunk_size = extra_params.get("chunk_size", DEFAULT_CHUNK_SIZE)
     chunk_overlap = extra_params.get("chunk_overlap", DEFAULT_CHUNK_OVERLAP)
@@ -277,14 +323,17 @@ async def index_document_endpoint(
         logger.error("Error extracting document for indexing: %s", e, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="An unexpected internal server error occurred while extracting the document for indexing.",
+            detail="An unexpected internal server error occurred while reading the document.",
         )
+
+    extraction_result["saved_filename"] = file_path.name
 
     try:
         index_result = index_document_data(
             extraction_result,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            user_id=current_user.id,
             index=vector_index,
         )
         return index_result
@@ -304,7 +353,7 @@ async def retrieve_endpoint(
 ):
     """
     Retrieve top relevant chunks matching a semantic query.
-    Protected: checks document ownership if filename is provided.
+    Protected: strictly limits retrieval to current_user documents and chunks.
     """
     query = payload.query.strip() if payload.query else ""
     if not query:
@@ -331,6 +380,7 @@ async def retrieve_endpoint(
             query=query,
             top_k=payload.top_k,
             filename=payload.filename,
+            user_id=current_user.id,
             index=vector_index,
         )
         return {
@@ -351,12 +401,12 @@ async def retrieve_endpoint(
 async def clear_index_endpoint(
     current_user: User = Depends(get_current_user),
 ):
-    """Clear all stored embeddings and chunks from the in-memory vector index."""
-    vector_index.clear()
+    """Clear in-memory vector index entries for the authenticated user."""
+    vector_index.clear(user_id=current_user.id)
     return {
         "status": "success",
-        "message": "In-memory vector index cleared.",
-        "total_indexed_chunks": 0,
+        "message": "In-memory vector index cleared for user.",
+        "total_indexed_chunks": vector_index.count(user_id=current_user.id),
     }
 
 
@@ -398,10 +448,13 @@ async def chat_document_endpoint(
             detail="You do not have access to this document.",
         )
 
-    # If no chunks match target_name in vector_index, check if file exists on disk to auto-index
+    # If no chunks match target_name for current user in vector_index, check if file exists on disk to auto-index
     def _has_chunks(fn: str) -> bool:
         base = Path(fn).name
         for c in vector_index.chunks:
+            c_uid = c.get("user_id")
+            if c_uid is not None and c_uid != current_user.id:
+                continue
             c_fn = c.get("filename")
             c_sfn = c.get("saved_filename")
             if c_fn == fn or c_sfn == fn:
@@ -433,16 +486,17 @@ async def chat_document_endpoint(
                 )
                 extraction_result = extract_document(file_to_index, orig_name)
                 extraction_result["saved_filename"] = file_to_index.name
-                index_document_data(extraction_result, index=vector_index)
+                index_document_data(extraction_result, user_id=current_user.id, index=vector_index)
             except Exception:
                 pass
 
-    # Retrieve relevant chunks matching query
+    # Retrieve relevant chunks matching query strictly scoped to current_user
     try:
         retrieved_chunks = retrieve_relevant_chunks(
             query=question,
             top_k=payload.top_k,
             filename=target_name,
+            user_id=current_user.id,
             index=vector_index,
         )
     except Exception as e:
@@ -456,9 +510,8 @@ async def chat_document_endpoint(
     try:
         answer_data = generate_rag_answer(question=question, chunks=retrieved_chunks)
 
-        # --- Save Chat Messages to DB associated with current_user and document ---
+        # Save Chat Messages to DB associated with current_user and document
         if doc_record:
-            # Associate document with user if it had no owner
             if doc_record.user_id is None:
                 doc_record.user_id = current_user.id
 

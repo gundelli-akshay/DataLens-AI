@@ -8,9 +8,10 @@ Routes:
 - GET /auth/me: Retrieve current authenticated user profile
 """
 
+import logging
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-import re
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 from google.oauth2 import id_token
@@ -26,18 +27,22 @@ from app.core.auth import (
 from app.db.models import User
 from app.db.session import get_db
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 class SignupRequest(BaseModel):
     email: str
-    password: str = Field(..., min_length=6, description="Password must be at least 6 characters")
-    full_name: Optional[str] = None
+    password: str = Field(..., min_length=6, max_length=128, description="Password must be between 6 and 128 characters")
+    full_name: Optional[str] = Field(None, max_length=128)
 
     @field_validator("email")
     @classmethod
     def validate_email_format(cls, v: str) -> str:
         clean = v.strip().lower()
+        if len(clean) > 254:
+            raise ValueError("Email exceeds maximum allowed length")
         if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean):
             raise ValueError("Invalid email format")
         return clean
@@ -45,7 +50,7 @@ class SignupRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: str
-    password: str
+    password: str = Field(..., max_length=128)
 
 
 class GoogleLoginRequest(BaseModel):
@@ -147,6 +152,7 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
     """
     Authenticate or register a user using a Google Identity Services ID token.
     If the email matches an existing user, reuses that User instead of creating a duplicate.
+    Validates token audience against configured Google Client ID.
     """
     token_str = payload.id_token or payload.credential
     if not token_str or not token_str.strip():
@@ -155,11 +161,18 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
             detail="Google ID token (id_token or credential) is required.",
         )
 
+    configured_audience = settings.google_client_id.strip() if settings.google_client_id else None
+
+    # In production, require Google Client ID configuration
+    if settings.is_production and not configured_audience:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Sign-In is not configured on this server.",
+        )
+
     try:
-        # Verify Google ID token
-        audience = settings.google_client_id if settings.google_client_id else None
         idinfo = id_token.verify_oauth2_token(
-            token_str, google_requests.Request(), audience=audience
+            token_str, google_requests.Request(), audience=configured_audience
         )
     except Exception as exc:
         raise HTTPException(

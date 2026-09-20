@@ -12,11 +12,6 @@ POST /ai/insights/
       "insights": "markdown string",
       "model": "gpt-4o-mini"
     }
-
-Constraints:
-  - Explains programmatic analysis; does not compute or fabricate numeric data.
-  - Supports CSV and XLSX.
-  - Document files (PDF/DOCX) rejected gracefully (422).
 """
 
 import re
@@ -58,8 +53,12 @@ def get_insights(request: InsightsRequest):
                 detail="Either 'analysis' or 'saved_filename' must be provided.",
             )
 
-        safe_name = Path(request.saved_filename).name
-        if safe_name != request.saved_filename:
+        filename = request.saved_filename
+        if "\x00" in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename.")
+
+        safe_name = Path(filename).name
+        if safe_name != filename:
             raise HTTPException(status_code=400, detail="Invalid filename.")
 
         file_path = settings.upload_dir_path / safe_name
