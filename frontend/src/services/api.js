@@ -2,7 +2,7 @@
  * services/api.js
  *
  * Central place for all backend API calls.
- * Components import functions from here — they never call fetch() directly.
+ * Components import functions from here - they never call fetch() directly.
  */
 
 const API_BASE = "/api";
@@ -22,7 +22,7 @@ export async function fetchApiInfo() {
 }
 
 /**
- * POST /upload/ — upload a single file.
+ * POST /upload/ - upload a single file.
  * @param {File} file
  * @returns {Promise<{ status, original_filename, saved_filename, file_type, file_size_bytes, file_size_display }>}
  */
@@ -48,26 +48,11 @@ export async function uploadFile(file) {
 }
 
 /**
- * POST /analyze/ — analyse a previously uploaded CSV or XLSX file.
+ * POST /analyze/ - analyse a previously uploaded CSV or XLSX file.
  *
  * @param {string} savedFilename - The UUID-prefixed filename returned by uploadFile().
  * @returns {Promise<AnalysisResult>} Structured analysis from Pandas.
  * @throws {Error} with a human-readable message from the backend.
- *
- * @typedef {Object} AnalysisResult
- * @property {"success"} status
- * @property {string}    filename
- * @property {"CSV"|"XLSX"} file_type
- * @property {{ rows: number, columns: number }} shape
- * @property {string[]} column_names
- * @property {Array<{
- *   name: string, dtype: string, category: string,
- *   missing_count: number, missing_pct: number, unique_count: number
- * }>} columns
- * @property {number} missing_total
- * @property {number} duplicate_rows
- * @property {Object} numeric_summary
- * @property {Object} categorical_summary
  */
 export async function analyzeFile(savedFilename) {
   const response = await fetch(`${API_BASE}/analyze/`, {
@@ -81,6 +66,36 @@ export async function analyzeFile(savedFilename) {
     try {
       const body = await response.json();
       if (body.detail) detail = body.detail;
+    } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}
+
+/**
+ * POST /ai/insights/ - generate AI insights from dataset analysis.
+ *
+ * @param {{ savedFilename?: string, analysis?: Object }} params
+ * @returns {Promise<{ status: string, insights: string, model: string }>}
+ * @throws {Error} with human-readable error from backend.
+ */
+export async function getAiInsights({ savedFilename, analysis } = {}) {
+  const body = {};
+  if (savedFilename) body.saved_filename = savedFilename;
+  if (analysis) body.analysis = analysis;
+
+  const response = await fetch(`${API_BASE}/ai/insights/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    let detail = "Failed to generate AI insights.";
+    try {
+      const data = await response.json();
+      if (data.detail) detail = data.detail;
     } catch { /* ignore */ }
     throw new Error(detail);
   }

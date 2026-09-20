@@ -64,7 +64,7 @@ export default function App() {
 
     // Analysis success
     if (analysisState === "success" && analysisData) {
-      return <AnalysisResults data={analysisData} />;
+      return <AnalysisResults data={analysisData} savedFilename={uploadResult?.saved_filename} />;
     }
 
     // Analysis error

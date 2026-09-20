@@ -1,7 +1,8 @@
-import "./AnalysisResults.css";
+﻿import "./AnalysisResults.css";
 import ChartPanel from "./ChartPanel";
+import AiInsightsSection from "./AiInsightsSection";
 
-// ── Number formatting helpers ──────────────────────────────────
+// ── Number formatting helpers ──
 function fmt(n) {
   if (n === null || n === undefined) return "—";
   return typeof n === "number" ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : n;
@@ -11,7 +12,7 @@ function fmtPct(n) {
   return `${n.toFixed(1)}%`;
 }
 
-// ── Category badge ─────────────────────────────────────────────
+// ── Category badge ──
 function CategoryBadge({ category }) {
   return (
     <span className={`ar-badge ar-badge--${category}`} aria-label={`${category} column`}>
@@ -20,7 +21,7 @@ function CategoryBadge({ category }) {
   );
 }
 
-// ── Overview stat cards ────────────────────────────────────────
+// ── Overview stat cards ──
 function StatCard({ label, value, accent }) {
   return (
     <div className={`ar-stat${accent ? " ar-stat--accent" : ""}`}>
@@ -30,7 +31,7 @@ function StatCard({ label, value, accent }) {
   );
 }
 
-// ── Numeric stats mini-card ────────────────────────────────────
+// ── Numeric stats mini-card ──
 function NumericCard({ colName, stats }) {
   const items = [
     { label: "Mean",   value: fmt(stats.mean) },
@@ -55,7 +56,7 @@ function NumericCard({ colName, stats }) {
   );
 }
 
-// ── Categorical top-values bar ─────────────────────────────────
+// ── Categorical top-values bar ──
 function CategoricalCard({ colName, summary }) {
   const max = summary.top_values[0]?.count || 1;
   return (
@@ -84,8 +85,8 @@ function CategoricalCard({ colName, summary }) {
   );
 }
 
-// ── Main component ─────────────────────────────────────────────
-export default function AnalysisResults({ data }) {
+// ── Main component ──
+export default function AnalysisResults({ data, savedFilename }) {
   if (!data) return null;
 
   const {
@@ -127,6 +128,11 @@ export default function AnalysisResults({ data }) {
           <StatCard label="Missing Values"  value={fmt(missing_total)} accent={hasMissing} />
           <StatCard label="Duplicate Rows"  value={fmt(duplicate_rows)} accent={hasDupes} />
         </div>
+      </div>
+
+      {/* ── AI Insights ── */}
+      <div className="ar-section">
+        <AiInsightsSection analysisData={data} savedFilename={savedFilename} />
       </div>
 
       {/* ── Column overview table ── */}

@@ -1,21 +1,21 @@
 ﻿"""
-main.py — DataLens AI FastAPI application entry point.
+main.py - DataLens AI FastAPI application entry point.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import health, upload, analyze
+from app.api import health, upload, analyze, insights
 from app.core.config import settings
 
-# ─── App instance ─────────────────────────────────────────────
+# ── App instance ──
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="AI-Powered Data & Document Analysis API",
 )
 
-# ─── CORS ─────────────────────────────────────────────────────
+# ── CORS ──
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,13 +24,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─── Routers ──────────────────────────────────────────────────
+# ── Routers ──
 app.include_router(health.router)
 app.include_router(upload.router)
 app.include_router(analyze.router)
+app.include_router(insights.router)
 
 
-# ─── Root endpoint ────────────────────────────────────────────
+# ── Root endpoint ──
 @app.get("/", tags=["Root"])
 def read_root():
     return {

@@ -1,5 +1,5 @@
 ﻿"""
-core/config.py — Application-wide configuration.
+core/config.py - Application-wide configuration.
 
 Reads environment variables from .env using pydantic-settings.
 All other modules import from here instead of reading os.environ directly.
@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     upload_dir: str = "data/uploads"
     max_upload_size_mb: int = 20
 
+    # AI / LLM
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -51,5 +56,5 @@ class Settings(BaseSettings):
         return path
 
 
-# Single shared instance — import this everywhere
+# Single shared instance - import this everywhere
 settings = Settings()
