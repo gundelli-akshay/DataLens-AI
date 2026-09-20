@@ -1,12 +1,11 @@
-﻿"""
-api/documents.py - Document text extraction endpoint.
+"""
+api/documents.py - Document extraction, indexing, and RAG retrieval endpoints.
 
-POST /documents/extract (or POST /documents/)
-  Accepts:
-    - JSON body: { "saved_filename": "<uuid32>_document.pdf" }
-    - Multipart form-data: file: UploadFile or saved_filename
-  Response:
-    Clean extracted text + metadata (filename, file_type, page_count, paragraph_count)
+Endpoints:
+- POST /documents/extract (or POST /documents/): Extract raw text & metadata from PDF/DOCX
+- POST /documents/index: Extract, split into overlapping chunks, embed, and store in-memory
+- POST /documents/retrieve: Semantic search returning top relevant chunks with source references (page/para)
+- POST /documents/clear-index: Reset in-memory vector index
 
 Supports: PDF, DOCX
 Rejects: CSV, XLSX (415), unsupported file types (415)
@@ -14,16 +13,24 @@ Rejects: CSV, XLSX (415), unsupported file types (415)
 
 from pathlib import Path
 import re
+from typing import Any
 import uuid
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.services.document_extraction import (
     extract_document,
     extract_text_from_pdf,
     extract_text_from_docx,
+)
+from app.services.rag import (
+    DEFAULT_CHUNK_OVERLAP,
+    DEFAULT_CHUNK_SIZE,
+    index_document_data,
+    retrieve_relevant_chunks,
+    vector_index,
 )
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
@@ -37,6 +44,19 @@ class DocumentExtractRequest(BaseModel):
     filename: str | None = None
 
 
+class DocumentIndexRequest(BaseModel):
+    saved_filename: str | None = None
+    filename: str | None = None
+    chunk_size: int = Field(default=DEFAULT_CHUNK_SIZE, ge=50, le=5000)
+    chunk_overlap: int = Field(default=DEFAULT_CHUNK_OVERLAP, ge=0, le=2000)
+
+
+class DocumentRetrieveRequest(BaseModel):
+    query: str
+    top_k: int = Field(default=5, ge=1, le=50)
+    filename: str | None = None
+
+
 def _safe_filename(original: str) -> str:
     base = Path(original).name
     safe = "".join(
@@ -46,20 +66,16 @@ def _safe_filename(original: str) -> str:
     return f"{uuid.uuid4().hex}_{safe}"
 
 
-@router.post("/extract")
-@router.post("/")
-async def process_document(request: Request):
+async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str, Any]]:
     """
-    Process an uploaded PDF or DOCX file and extract clean text with metadata.
-
-    Supports:
-      - JSON body: {"saved_filename": "<uuid>_file.pdf"}
-      - Multipart form-data: file upload
+    Helper to extract file_path, original_filename, and parameters from either
+    multipart/form-data or JSON body.
     """
     content_type = request.headers.get("content-type", "")
     saved_filename: str | None = None
     file_bytes: bytes | None = None
     original_filename: str = ""
+    extra_params: dict[str, Any] = {}
 
     if "multipart/form-data" in content_type:
         form = await request.form()
@@ -69,11 +85,25 @@ async def process_document(request: Request):
             file_bytes = await uploaded_file.read()
         if "saved_filename" in form:
             saved_filename = str(form.get("saved_filename"))
+        if "chunk_size" in form:
+            try:
+                extra_params["chunk_size"] = int(form.get("chunk_size"))
+            except (ValueError, TypeError):
+                pass
+        if "chunk_overlap" in form:
+            try:
+                extra_params["chunk_overlap"] = int(form.get("chunk_overlap"))
+            except (ValueError, TypeError):
+                pass
     else:
         try:
             body = await request.json()
             if isinstance(body, dict):
                 saved_filename = body.get("saved_filename") or body.get("filename")
+                if "chunk_size" in body:
+                    extra_params["chunk_size"] = int(body["chunk_size"])
+                if "chunk_overlap" in body:
+                    extra_params["chunk_overlap"] = int(body["chunk_overlap"])
         except Exception:
             saved_filename = request.query_params.get("saved_filename")
 
@@ -106,14 +136,7 @@ async def process_document(request: Request):
         if safe_name != saved_filename:
             raise HTTPException(status_code=400, detail="Invalid filename.")
 
-        file_path = settings.upload_dir_path / safe_name
-        if not file_path.exists():
-            raise HTTPException(
-                status_code=404,
-                detail=f"File '{safe_name}' was not found. Please upload the file first via POST /upload/.",
-            )
-
-        suffix = file_path.suffix.lower()
+        suffix = Path(safe_name).suffix.lower()
         if suffix in TABULAR_EXTENSIONS:
             raise HTTPException(
                 status_code=415,
@@ -125,7 +148,29 @@ async def process_document(request: Request):
                 detail=f"'{suffix}' is not a supported document format. Only PDF and DOCX files are supported.",
             )
 
+        file_path = settings.upload_dir_path / safe_name
+        if not file_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"File '{safe_name}' was not found. Please upload the file first via POST /upload/.",
+            )
+
         original_filename = re.sub(r"^[0-9a-f]{32}_", "", safe_name, count=1) or safe_name
+
+    return file_path, original_filename, extra_params
+
+
+@router.post("/extract")
+@router.post("/")
+async def process_document(request: Request):
+    """
+    Process an uploaded PDF or DOCX file and extract clean text with metadata.
+
+    Supports:
+      - JSON body: {"saved_filename": "<uuid>_file.pdf"}
+      - Multipart form-data: file upload
+    """
+    file_path, original_filename, _ = await _resolve_document_file(request)
 
     try:
         return extract_document(file_path, original_filename)
@@ -136,3 +181,98 @@ async def process_document(request: Request):
             status_code=500,
             detail=f"An error occurred while extracting text from the document: {str(e)}",
         )
+
+
+@router.post("/index")
+async def index_document_endpoint(request: Request):
+    """
+    Extract text from a PDF or DOCX document, split into overlapping chunks,
+    compute local embeddings via sentence-transformers, and index in memory.
+
+    Supports:
+      - Multipart form: file upload (optional chunk_size, chunk_overlap)
+      - JSON body: {"saved_filename": "...", "chunk_size": 500, "chunk_overlap": 100}
+    """
+    file_path, original_filename, extra_params = await _resolve_document_file(request)
+
+    chunk_size = extra_params.get("chunk_size", DEFAULT_CHUNK_SIZE)
+    chunk_overlap = extra_params.get("chunk_overlap", DEFAULT_CHUNK_OVERLAP)
+
+    if chunk_overlap >= chunk_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"chunk_overlap ({chunk_overlap}) must be strictly less than chunk_size ({chunk_size}).",
+        )
+
+    try:
+        extraction_result = extract_document(file_path, original_filename)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to extract document for indexing: {str(e)}",
+        )
+
+    try:
+        index_result = index_document_data(
+            extraction_result,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            index=vector_index,
+        )
+        return index_result
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to index document: {str(e)}",
+        )
+
+
+@router.post("/retrieve")
+async def retrieve_endpoint(payload: DocumentRetrieveRequest):
+    """
+    Retrieve top relevant chunks matching a semantic query.
+
+    Request JSON:
+      - query: query string (required)
+      - top_k: maximum number of chunks to return (default: 5)
+      - filename: optional filter to limit search to a specific document
+
+    Returns:
+      Matching chunks sorted descending by cosine similarity score,
+      including source references (page_number or paragraph_number).
+    """
+    query = payload.query.strip() if payload.query else ""
+    if not query:
+        raise HTTPException(status_code=400, detail="Query string cannot be empty.")
+
+    try:
+        results = retrieve_relevant_chunks(
+            query=query,
+            top_k=payload.top_k,
+            filename=payload.filename,
+            index=vector_index,
+        )
+        return {
+            "status": "success",
+            "query": query,
+            "count": len(results),
+            "results": results,
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Retrieval query failed: {str(e)}",
+        )
+
+
+@router.post("/clear-index")
+async def clear_index_endpoint():
+    """Clear all stored embeddings and chunks from the in-memory vector index."""
+    vector_index.clear()
+    return {
+        "status": "success",
+        "message": "In-memory vector index cleared.",
+        "total_indexed_chunks": 0,
+    }

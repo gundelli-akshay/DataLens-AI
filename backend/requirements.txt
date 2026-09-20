@@ -1,4 +1,4 @@
-﻿# Web Framework
+# Web Framework
 fastapi==0.115.12
 uvicorn[standard]==0.34.3
 
@@ -16,9 +16,10 @@ openpyxl==3.1.5
 # AI / LLM
 groq
 
-# Document Extraction
+# Document Extraction & RAG
 pymupdf==1.28.2
 python-docx==1.2.0
+sentence-transformers==6.1.0
 
 # Added as the project grows
 # sqlalchemy
