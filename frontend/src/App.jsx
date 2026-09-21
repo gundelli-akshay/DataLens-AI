@@ -7,6 +7,7 @@ import ResultsPlaceholder from "./components/ResultsPlaceholder";
 import AnalysisResults from "./components/AnalysisResults";
 import DocumentChat from "./components/DocumentChat";
 import AuthModal from "./components/AuthModal";
+import UserMenuModal from "./components/UserMenuModal";
 import "./App.css";
 
 const ANALYSIS_TYPES = ["CSV", "XLSX"];
@@ -17,11 +18,37 @@ export default function App() {
   // Authentication state
   const [user, setUser] = useState(() => getStoredUser());
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [userModalTab, setUserModalTab] = useState("profile");
+
+  // Workspace and document state
+  const [uploadResult, setUploadResult] = useState(null);
+  const [analysisState, setAnalysisState] = useState("idle");
+  const [analysisData, setAnalysisData] = useState(null);
+  const [analysisError, setAnalysisError] = useState("");
+  const [workspaceKey, setWorkspaceKey] = useState(0);
+
+  const isDocChat = Boolean(uploadResult && !ANALYSIS_TYPES.includes(uploadResult.file_type));
+
+  // Always show a fresh empty workspace on app startup / reload
+  useEffect(() => {
+    handleResetUpload();
+    setWorkspaceKey((prev) => prev + 1);
+  }, []);
 
   // Synchronize auth state and verify session on load
   useEffect(() => {
     function handleAuthChange() {
-      setUser(getStoredUser());
+      const u = getStoredUser();
+      setUser(u);
+      if (!u) {
+        setUploadResult(null);
+        setAnalysisData(null);
+        setAnalysisError("");
+        setAnalysisState("idle");
+        setUserModalOpen(false);
+        setWorkspaceKey((prev) => prev + 1);
+      }
     }
     window.addEventListener("auth-changed", handleAuthChange);
 
@@ -33,13 +60,64 @@ export default function App() {
     return () => window.removeEventListener("auth-changed", handleAuthChange);
   }, []);
 
-  // Last upload response from /upload/
-  const [uploadResult, setUploadResult] = useState(null);
+  // Clear document & analysis state when resetting upload or starting new upload
+  function handleResetUpload() {
+    setUploadResult(null);
+    setAnalysisData(null);
+    setAnalysisError("");
+    setAnalysisState("idle");
+  }
 
-  // Analysis state machine
-  const [analysisState, setAnalysisState] = useState("idle");
-  const [analysisData, setAnalysisData] = useState(null);
-  const [analysisError, setAnalysisError] = useState("");
+  // Complete workspace reset on sign out
+  function handleSignOut() {
+    clearAuthData();
+    setUser(null);
+    setUserModalOpen(false);
+    setAuthModalOpen(false);
+    handleResetUpload();
+    setWorkspaceKey((prev) => prev + 1);
+  }
+
+  function handleOpenUserMenu(tab) {
+    setUserModalTab(tab || "profile");
+    setUserModalOpen(true);
+  }
+
+  async function handleSelectDocument(doc) {
+    if (!doc) return;
+    const formattedDoc = {
+      saved_filename: doc.saved_filename,
+      original_filename: doc.original_filename || doc.saved_filename,
+      file_type: doc.file_type || "PDF",
+      file_size_bytes: doc.file_size_bytes,
+      _ts: Date.now(),
+    };
+
+    setUploadResult(formattedDoc);
+    setAnalysisData(null);
+    setAnalysisError("");
+
+    if (ANALYSIS_TYPES.includes(formattedDoc.file_type)) {
+      setAnalysisState("loading");
+      try {
+        const result = await analyzeFile(formattedDoc.saved_filename);
+        setAnalysisData(result);
+        setAnalysisState("success");
+      } catch (err) {
+        setAnalysisState("error");
+        setAnalysisError(err.message || "Analysis failed. Please try again.");
+      }
+    } else {
+      setAnalysisState("idle");
+    }
+
+    setTimeout(() => {
+      const resultsEl = document.querySelector(".card--doc-chat") || document.querySelector(".card:nth-of-type(2)");
+      if (resultsEl) {
+        resultsEl.scrollIntoView({ behavior: "smooth" });
+      }
+    }, 100);
+  }
 
   // Called by UploadZone on every successful upload
   async function handleUploadSuccess(uploadData) {
@@ -121,6 +199,7 @@ export default function App() {
     if (uploadResult && !ANALYSIS_TYPES.includes(uploadResult.file_type)) {
       return (
         <DocumentChat
+          key={`${uploadResult.saved_filename}_${uploadResult._ts || ""}`}
           document={uploadResult}
           user={user}
           onRequireAuth={() => setAuthModalOpen(true)}
@@ -138,10 +217,8 @@ export default function App() {
         apiStatus={apiStatus}
         user={user}
         onOpenAuth={() => setAuthModalOpen(true)}
-        onSignOut={() => {
-          clearAuthData();
-          setUser(null);
-        }}
+        onOpenUserMenu={handleOpenUserMenu}
+        onSignOut={handleSignOut}
       />
 
       <main className="main">
@@ -164,11 +241,11 @@ export default function App() {
         {/* Upload Card */}
         <div className="card">
           <div className="card__label">Step 1 - Upload a file</div>
-          <UploadZone onUploadSuccess={handleUploadSuccess} />
+          <UploadZone key={workspaceKey} onUploadSuccess={handleUploadSuccess} onReset={handleResetUpload} />
         </div>
 
         {/* Results / Analysis Card */}
-        <div className="card">{renderResults()}</div>
+        <div className={`card ${isDocChat ? "card--doc-chat" : ""}`}>{renderResults()}</div>
       </main>
 
       <footer className="footer">
@@ -181,6 +258,16 @@ export default function App() {
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
         onSuccess={(loggedUser) => setUser(loggedUser)}
+      />
+
+      {/* User Menu Modal (Profile, Chat History, My Documents) */}
+      <UserMenuModal
+        isOpen={userModalOpen}
+        initialTab={userModalTab}
+        user={user}
+        onClose={() => setUserModalOpen(false)}
+        onSelectDocument={handleSelectDocument}
+        onSignOut={handleSignOut}
       />
     </div>
   );

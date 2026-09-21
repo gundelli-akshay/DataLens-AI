@@ -17,6 +17,12 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.services.analysis import analyze_csv, analyze_xlsx
+from app.db.session import get_db
+from app.db.models import Document
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.core.auth import get_optional_current_user
+from app.db.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +44,7 @@ class AnalyzeRequest(BaseModel):
 
 # -- Router ------------------------------------------------------
 @router.post("/")
-def analyze_file(request: AnalyzeRequest):
+def analyze_file(request: AnalyzeRequest, db: Session = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
     """
     Analyse a previously uploaded CSV or XLSX file.
     The file must already exist in data/uploads/ (uploaded via POST /upload/).
@@ -94,6 +100,13 @@ def analyze_file(request: AnalyzeRequest):
             result = analyze_csv(file_path, original_filename)
         else:
             result = analyze_xlsx(file_path, original_filename)
+
+        doc = db.query(Document).filter(Document.saved_filename == safe_name).first()
+        if doc:
+            if doc.user_id is not None and (current_user is None or doc.user_id != current_user.id):
+                raise HTTPException(status_code=403, detail="Not authorized to access this document.")
+            if doc.ai_insights:
+                result["ai_insights"] = doc.ai_insights
     except Exception as exc:
         logger.error("Analysis execution error: %s", exc, exc_info=True)
         raise HTTPException(

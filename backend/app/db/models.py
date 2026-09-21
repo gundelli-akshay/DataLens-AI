@@ -34,6 +34,7 @@ class Document(Base):
     file_type = Column(String)
     file_size_bytes = Column(Integer, nullable=True)
     uploaded_at = Column(DateTime, default=utc_now)
+    ai_insights = Column(Text, nullable=True)
 
     user = relationship("User", back_populates="documents")
     chat_messages = relationship("ChatMessage", back_populates="document", cascade="all, delete-orphan")

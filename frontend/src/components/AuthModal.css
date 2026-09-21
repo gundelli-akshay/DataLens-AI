@@ -257,11 +257,16 @@
 .auth-google-container {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 42px;
 }
 
-.auth-gsi-wrapper:empty {
-  display: none;
+.auth-gsi-wrapper {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 .auth-google-fallback-btn {

@@ -135,8 +135,8 @@ async def upload_file(
     upload_path = settings.upload_dir_path / saved_name
     upload_path.write_bytes(content)
 
-    # -- 5. Save to DB (for PDF/DOCX) ---------------------------
-    if suffix in {".pdf", ".docx"}:
+    # -- 5. Save to DB (for all uploaded files) -----------------
+    if suffix in ALLOWED_EXTENSIONS:
         doc_record = Document(
             user_id=current_user.id if current_user else None,
             original_filename=clean_name,

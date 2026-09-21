@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { chatDocument, indexDocument } from "../services/api";
+import { chatDocument, indexDocument, getDocumentMessages } from "../services/api";
+import MarkdownRenderer from "./MarkdownRenderer";
 import "./DocumentChat.css";
 
 const SUGGESTIONS = [
@@ -13,9 +14,9 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
   const fileType = document?.file_type || "PDF";
   const savedFilename = document?.saved_filename;
 
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState(() => [
     {
-      id: "init",
+      id: `init_${Date.now()}`,
       role: "assistant",
       content: `I've analyzed **${fileName}** (${fileType}). Ask any question about this document — every answer is strictly grounded in the document context with verified source citations.`,
       sources: [],
@@ -25,6 +26,45 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [expandedSources, setExpandedSources] = useState({});
+
+  // Reset all chat messages, inputs, and sources whenever a new document is loaded
+  useEffect(() => {
+    const welcome = {
+      id: `init_${Date.now()}`,
+      role: "assistant",
+      content: `I've analyzed **${fileName}** (${fileType}). Ask any question about this document — every answer is strictly grounded in the document context with verified source citations.`,
+      sources: [],
+    };
+    setMessages([welcome]);
+    setInputQuery("");
+    setErrorMsg("");
+    setExpandedSources({});
+
+    // If authenticated and reopening an existing document, load saved messages
+    if (user && savedFilename) {
+      let isSubscribed = true;
+      getDocumentMessages(savedFilename)
+        .then((res) => {
+          if (!isSubscribed) return;
+          if (res && Array.isArray(res.messages) && res.messages.length > 0) {
+            const loaded = res.messages.map((m) => ({
+              id: String(m.id),
+              role: m.role,
+              content: m.content,
+              sources: m.sources || [],
+            }));
+            setMessages([welcome, ...loaded]);
+          }
+        })
+        .catch(() => {
+          // Fresh document or error - keep default welcome message
+        });
+
+      return () => {
+        isSubscribed = false;
+      };
+    }
+  }, [savedFilename, fileName, fileType, user]);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -195,7 +235,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
               )}
             </div>
             <div className="doc-chat__msg-content">
-              <p className="doc-chat__msg-text">{msg.content}</p>
+              <MarkdownRenderer content={msg.content} />
 
               {/* Source citations */}
               {msg.sources && msg.sources.length > 0 && (
@@ -246,9 +286,10 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
             </div>
             <div className="doc-chat__msg-content">
               <div className="doc-chat__thinking">
-                <span></span>
-                <span></span>
-                <span></span>
+                <span className="doc-chat__dot"></span>
+                <span className="doc-chat__dot"></span>
+                <span className="doc-chat__dot"></span>
+                <span className="doc-chat__thinking-text">Searching document...</span>
               </div>
             </div>
           </div>
@@ -261,7 +302,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
       {errorMsg && (
         <div className="doc-chat__error" role="alert">
           <span className="doc-chat__error-icon">!</span>
-          <span>{errorMsg}</span>
+          <span className="doc-chat__error-msg">{errorMsg}</span>
         </div>
       )}
 

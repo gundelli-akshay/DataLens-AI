@@ -91,10 +91,13 @@
 /* ── Overview stat cards ─────────────────────────────────────── */
 .ar-stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.65rem;
 }
-@media (max-width: 600px) {
+@media (max-width: 900px) {
+  .ar-stats-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 520px) {
   .ar-stats-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -182,6 +185,7 @@
 }
 .ar-badge--numeric     { background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
 .ar-badge--categorical { background: rgba(34,197,94,0.12);  color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+.ar-badge--id          { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
 .ar-badge--date        { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.25); }
 
 /* ── Numeric stats cards ─────────────────────────────────────── */
@@ -327,4 +331,87 @@
   border: 1px solid rgba(251,191,36,0.2);
   border-radius: 8px;
   padding: 0.3rem 0.75rem;
+}
+
+
+/* ── Compact & Expandable UI Controls ─────────────────────────────── */
+.ar-section__header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ar-section__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ar-toggle-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+.ar-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+.ar-view-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.ar-view-btn {
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ar-view-btn.active {
+  background: rgba(99, 102, 241, 0.25);
+  color: #c7d2fe;
+}
+
+.ar-expand-bar {
+  display: flex;
+  justify-content: center;
+  margin-top: 0.4rem;
+}
+
+.ar-expand-btn {
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 8px;
+  color: #a5b4fc;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.45rem 1.1rem;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+.ar-expand-btn:hover {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: #818cf8;
+  color: #ffffff;
+}
+
+.ar-table--num td {
+  font-variant-numeric: tabular-nums;
 }

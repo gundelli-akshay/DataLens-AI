@@ -1,4 +1,5 @@
-﻿import "./AnalysisResults.css";
+import { useState } from "react";
+import "./AnalysisResults.css";
 import ChartPanel from "./ChartPanel";
 import AiInsightsSection from "./AiInsightsSection";
 
@@ -96,12 +97,35 @@ export default function AnalysisResults({ data, savedFilename }) {
     numeric_summary, categorical_summary,
   } = data;
 
+  // Expansion & Compact UI State
+  const [colsExpanded, setColsExpanded] = useState(false);
+  const [colsCollapsed, setColsCollapsed] = useState(false);
+
+  const [numericMode, setNumericMode] = useState("table"); // "table" | "cards"
+  const [numericExpanded, setNumericExpanded] = useState(false);
+  const [numericCollapsed, setNumericCollapsed] = useState(false);
+
+  const [catExpanded, setCatExpanded] = useState(false);
+  const [catCollapsed, setCatCollapsed] = useState(false);
+
   const numericCols     = columns.filter((c) => c.category === "numeric");
   const categoricalCols = columns.filter((c) => c.category === "categorical");
   const dateCols        = columns.filter((c) => c.category === "date");
 
   const hasMissing = missing_total > 0;
   const hasDupes   = duplicate_rows > 0;
+
+  // Limits for compact views
+  const COL_COMPACT_LIMIT = 6;
+  const NUM_COMPACT_LIMIT = 4;
+  const CAT_COMPACT_LIMIT = 3;
+
+  const visibleColumns = colsExpanded ? columns : columns.slice(0, COL_COMPACT_LIMIT);
+  const numericEntries = Object.entries(numeric_summary);
+  const visibleNumericEntries = numericExpanded ? numericEntries : numericEntries.slice(0, NUM_COMPACT_LIMIT);
+
+  const catEntries = Object.entries(categorical_summary);
+  const visibleCatEntries = catExpanded ? catEntries : catEntries.slice(0, CAT_COMPACT_LIMIT);
 
   return (
     <div className="ar" role="region" aria-label="Dataset analysis results">
@@ -120,13 +144,15 @@ export default function AnalysisResults({ data, savedFilename }) {
         <div className="ar-header__badge">Analysis complete</div>
       </div>
 
-      {/* ── Overview stats ── */}
+      {/* ── Overview stats: Balanced 6-card grid with exact dataset metrics ── */}
       <div className="ar-section">
         <div className="ar-stats-grid">
-          <StatCard label="Rows"            value={fmt(shape.rows)} />
-          <StatCard label="Columns"         value={fmt(shape.columns)} />
-          <StatCard label="Missing Values"  value={fmt(missing_total)} accent={hasMissing} />
-          <StatCard label="Duplicate Rows"  value={fmt(duplicate_rows)} accent={hasDupes} />
+          <StatCard label="Rows"               value={fmt(shape.rows)} />
+          <StatCard label="Columns"            value={fmt(shape.columns)} />
+          <StatCard label="Numeric Columns"    value={fmt(numericCols.length)} />
+          <StatCard label="Categorical Columns" value={fmt(categoricalCols.length)} />
+          <StatCard label="Missing Values"     value={fmt(missing_total)} accent={hasMissing} />
+          <StatCard label="Duplicate Rows"     value={fmt(duplicate_rows)} accent={hasDupes} />
         </div>
       </div>
 
@@ -135,68 +161,213 @@ export default function AnalysisResults({ data, savedFilename }) {
         <AiInsightsSection analysisData={data} savedFilename={savedFilename} />
       </div>
 
-      {/* ── Column overview table ── */}
+      {/* ── Column overview table (Compact & Expandable) ── */}
       <div className="ar-section">
-        <h3 className="ar-section__title">Column Overview</h3>
-        <div className="ar-table-wrap" role="region" aria-label="Column overview table" tabIndex={0}>
-          <table className="ar-table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Column</th>
-                <th>Type</th>
-                <th>Category</th>
-                <th>Missing</th>
-                <th>Unique</th>
-              </tr>
-            </thead>
-            <tbody>
-              {columns.map((col, i) => (
-                <tr key={col.name}>
-                  <td className="ar-table__idx">{i + 1}</td>
-                  <td className="ar-table__name" title={col.name}>{col.name}</td>
-                  <td className="ar-table__dtype">{col.dtype}</td>
-                  <td><CategoryBadge category={col.category} /></td>
-                  <td className={col.missing_count > 0 ? "ar-table__warn" : ""}>
-                    {col.missing_count > 0
-                      ? `${fmt(col.missing_count)} (${fmtPct(col.missing_pct)})`
-                      : "—"}
-                  </td>
-                  <td>{fmt(col.unique_count)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="ar-section__header-bar">
+          <h3 className="ar-section__title">
+            Column Overview
+            <span className="ar-section__count">{columns.length} columns</span>
+          </h3>
+          <div className="ar-section__controls">
+            <button
+              type="button"
+              className="ar-toggle-btn"
+              onClick={() => setColsCollapsed(!colsCollapsed)}
+              aria-expanded={!colsCollapsed}
+            >
+              {colsCollapsed ? "Expand Section" : "Collapse Section"}
+            </button>
+          </div>
         </div>
+
+        {!colsCollapsed && (
+          <>
+            <div className="ar-table-wrap" role="region" aria-label="Column overview table" tabIndex={0}>
+              <table className="ar-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Column</th>
+                    <th>Type</th>
+                    <th>Category</th>
+                    <th>Missing</th>
+                    <th>Unique</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleColumns.map((col, i) => (
+                    <tr key={col.name}>
+                      <td className="ar-table__idx">{i + 1}</td>
+                      <td className="ar-table__name" title={col.name}>{col.name}</td>
+                      <td className="ar-table__dtype">{col.dtype}</td>
+                      <td><CategoryBadge category={col.category} /></td>
+                      <td className={col.missing_count > 0 ? "ar-table__warn" : ""}>
+                        {col.missing_count > 0
+                          ? `${fmt(col.missing_count)} (${fmtPct(col.missing_pct)})`
+                          : "—"}
+                      </td>
+                      <td>{fmt(col.unique_count)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {columns.length > COL_COMPACT_LIMIT && (
+              <div className="ar-expand-bar">
+                <button
+                  type="button"
+                  className="ar-expand-btn"
+                  onClick={() => setColsExpanded(!colsExpanded)}
+                >
+                  {colsExpanded
+                    ? "Show less (compact view)"
+                    : `Show all ${columns.length} columns (+${columns.length - COL_COMPACT_LIMIT} more)`}
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* ── Numeric statistics ── */}
-      {Object.keys(numeric_summary).length > 0 && (
+      {/* ── Numeric statistics (Compact Table or Cards + Expandable) ── */}
+      {numericEntries.length > 0 && (
         <div className="ar-section">
-          <h3 className="ar-section__title">
-            Numeric Statistics
-            <span className="ar-section__count">{numericCols.length} columns</span>
-          </h3>
-          <div className="ar-num-grid">
-            {Object.entries(numeric_summary).map(([col, stats]) => (
-              <NumericCard key={col} colName={col} stats={stats} />
-            ))}
+          <div className="ar-section__header-bar">
+            <h3 className="ar-section__title">
+              Numeric Statistics
+              <span className="ar-section__count">{numericEntries.length} columns</span>
+            </h3>
+            <div className="ar-section__controls">
+              <div className="ar-view-toggle">
+                <button
+                  type="button"
+                  className={`ar-view-btn ${numericMode === "table" ? "active" : ""}`}
+                  onClick={() => setNumericMode("table")}
+                >
+                  Table
+                </button>
+                <button
+                  type="button"
+                  className={`ar-view-btn ${numericMode === "cards" ? "active" : ""}`}
+                  onClick={() => setNumericMode("cards")}
+                >
+                  Cards
+                </button>
+              </div>
+              <button
+                type="button"
+                className="ar-toggle-btn"
+                onClick={() => setNumericCollapsed(!numericCollapsed)}
+                aria-expanded={!numericCollapsed}
+              >
+                {numericCollapsed ? "Expand" : "Collapse"}
+              </button>
+            </div>
           </div>
+
+          {!numericCollapsed && (
+            <>
+              {numericMode === "table" ? (
+                /* Compact Statistics Table */
+                <div className="ar-table-wrap" role="region" aria-label="Numeric statistics table" tabIndex={0}>
+                  <table className="ar-table ar-table--num">
+                    <thead>
+                      <tr>
+                        <th>Metric Column</th>
+                        <th>Mean</th>
+                        <th>Median</th>
+                        <th>Std Dev</th>
+                        <th>Min</th>
+                        <th>Max</th>
+                        <th>Count</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(numericExpanded ? numericEntries : numericEntries.slice(0, 6)).map(([col, stats]) => (
+                        <tr key={col}>
+                          <td className="ar-table__name" title={col}>{col}</td>
+                          <td>{fmt(stats.mean)}</td>
+                          <td>{fmt(stats.median)}</td>
+                          <td>{fmt(stats.std)}</td>
+                          <td>{fmt(stats.min)}</td>
+                          <td>{fmt(stats.max)}</td>
+                          <td>{fmt(stats.count)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                /* Detailed Cards Grid */
+                <div className="ar-num-grid">
+                  {visibleNumericEntries.map(([col, stats]) => (
+                    <NumericCard key={col} colName={col} stats={stats} />
+                  ))}
+                </div>
+              )}
+
+              {numericEntries.length > (numericMode === "table" ? 6 : NUM_COMPACT_LIMIT) && (
+                <div className="ar-expand-bar">
+                  <button
+                    type="button"
+                    className="ar-expand-btn"
+                    onClick={() => setNumericExpanded(!numericExpanded)}
+                  >
+                    {numericExpanded
+                      ? "Show fewer metrics"
+                      : `Show all ${numericEntries.length} numeric statistics`}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 
-      {/* ── Categorical summary ── */}
-      {Object.keys(categorical_summary).length > 0 && (
+      {/* ── Categorical summary (Compact & Expandable) ── */}
+      {catEntries.length > 0 && (
         <div className="ar-section">
-          <h3 className="ar-section__title">
-            Categorical Summary
-            <span className="ar-section__count">{categoricalCols.length} columns</span>
-          </h3>
-          <div className="ar-cat-grid">
-            {Object.entries(categorical_summary).map(([col, summary]) => (
-              <CategoricalCard key={col} colName={col} summary={summary} />
-            ))}
+          <div className="ar-section__header-bar">
+            <h3 className="ar-section__title">
+              Categorical Summary
+              <span className="ar-section__count">{catEntries.length} columns</span>
+            </h3>
+            <div className="ar-section__controls">
+              <button
+                type="button"
+                className="ar-toggle-btn"
+                onClick={() => setCatCollapsed(!catCollapsed)}
+                aria-expanded={!catCollapsed}
+              >
+                {catCollapsed ? "Expand Section" : "Collapse Section"}
+              </button>
+            </div>
           </div>
+
+          {!catCollapsed && (
+            <>
+              <div className="ar-cat-grid">
+                {visibleCatEntries.map(([col, summary]) => (
+                  <CategoricalCard key={col} colName={col} summary={summary} />
+                ))}
+              </div>
+
+              {catEntries.length > CAT_COMPACT_LIMIT && (
+                <div className="ar-expand-bar">
+                  <button
+                    type="button"
+                    className="ar-expand-btn"
+                    onClick={() => setCatExpanded(!catExpanded)}
+                  >
+                    {catExpanded
+                      ? "Show fewer categories"
+                      : `Show all ${catEntries.length} categorical breakdowns (+${catEntries.length - CAT_COMPACT_LIMIT} more)`}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
 

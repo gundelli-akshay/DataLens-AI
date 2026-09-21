@@ -1,32 +1,34 @@
 import { useState, useEffect, useRef } from "react";
-import { login, signup, loginWithGoogle, getAuthConfig } from "../services/api";
+import { login, signup, loginWithGoogle } from "../services/api";
 import "./AuthModal.css";
 
-export default function AuthModal({ isOpen, onClose, onSuccess }) {
-  const [mode, setMode] = useState("login"); // "login" | "signup"
+export default function AuthModal({
+  isOpen,
+  onClose,
+  onSuccess,
+  initialMode = "login",
+  googleClientId = "",
+}) {
+  const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
-  const [activeClientId, setActiveClientId] = useState(
-    import.meta.env.VITE_GOOGLE_CLIENT_ID || ""
-  );
+  const [loading, setLoading] = useState(false);
+  const [gsiLoaded, setGsiLoaded] = useState(false);
 
   const googleBtnRef = useRef(null);
 
-  // Fetch public Google Client ID from backend if not supplied via build env
-  useEffect(() => {
-    if (!activeClientId) {
-      getAuthConfig().then((cfg) => {
-        if (cfg?.google_client_id) {
-          setActiveClientId(cfg.google_client_id);
-        }
-      }).catch(() => {});
-    }
-  }, [activeClientId]);
+  const activeClientId =
+    googleClientId ||
+    (typeof window !== "undefined" && window.__DATA_LENS_CONFIG__?.googleClientId) ||
+    import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+    "";
 
-  // Reset form when modal opens
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode, isOpen]);
+
   useEffect(() => {
     if (isOpen) {
       setErrorMsg("");
@@ -38,40 +40,95 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
 
   // Google Identity Services integration
   useEffect(() => {
-    if (!isOpen) return;
-
-    if (window.google?.accounts?.id && googleBtnRef.current && activeClientId) {
-      try {
-        window.google.accounts.id.initialize({
-          client_id: activeClientId,
-          callback: async (response) => {
-            if (response?.credential) {
-              setLoading(true);
-              setErrorMsg("");
-              try {
-                const res = await loginWithGoogle(response.credential);
-                onSuccess(res.user);
-                onClose();
-              } catch (err) {
-                setErrorMsg(err.message || "Google Sign-In failed.");
-              } finally {
-                setLoading(false);
-              }
-            }
-          },
-        });
-
-        window.google.accounts.id.renderButton(googleBtnRef.current, {
-          theme: "outline",
-          size: "large",
-          width: "100%",
-          text: "continue_with",
-          shape: "rectangular",
-        });
-      } catch (err) {
-        console.warn("GSI initialization skipped/unavailable:", err);
-      }
+    if (!isOpen) {
+      setGsiLoaded(false);
+      return;
     }
+
+    // Always clear existing button container to prevent duplicate renders
+    if (googleBtnRef.current) {
+      googleBtnRef.current.innerHTML = "";
+    }
+
+    if (!activeClientId) {
+      setGsiLoaded(false);
+      return;
+    }
+
+    let isMounted = true;
+    let pollTimer = null;
+    let fallbackTimer = null;
+
+    const tryInitAndRender = () => {
+      if (!isMounted || !googleBtnRef.current) return false;
+
+      if (window.google?.accounts?.id) {
+        try {
+          googleBtnRef.current.innerHTML = "";
+          window.google.accounts.id.initialize({
+            client_id: activeClientId,
+            callback: async (response) => {
+              if (response?.credential) {
+                setLoading(true);
+                setErrorMsg("");
+                try {
+                  const res = await loginWithGoogle(response.credential);
+                  onSuccess(res.user);
+                  onClose();
+                } catch (err) {
+                  setErrorMsg(err.message || "Google Sign-In failed.");
+                } finally {
+                  setLoading(false);
+                }
+              }
+            },
+          });
+
+          window.google.accounts.id.renderButton(googleBtnRef.current, {
+            theme: "outline",
+            size: "large",
+            width: 320,
+            text: "continue_with",
+            shape: "rectangular",
+          });
+
+          if (isMounted) {
+            setGsiLoaded(true);
+          }
+          return true;
+        } catch (err) {
+          console.warn("GSI initialization error:", err);
+          if (isMounted) {
+            setGsiLoaded(false);
+          }
+          return false;
+        }
+      }
+      return false;
+    };
+
+    const rendered = tryInitAndRender();
+    if (!rendered) {
+      pollTimer = setInterval(() => {
+        if (tryInitAndRender()) {
+          clearInterval(pollTimer);
+          clearTimeout(fallbackTimer);
+        }
+      }, 150);
+
+      fallbackTimer = setTimeout(() => {
+        if (pollTimer) clearInterval(pollTimer);
+        if (isMounted && !googleBtnRef.current?.hasChildNodes()) {
+          setGsiLoaded(false);
+        }
+      }, 1500);
+    }
+
+    return () => {
+      isMounted = false;
+      if (pollTimer) clearInterval(pollTimer);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+    };
   }, [isOpen, mode, activeClientId]);
 
   if (!isOpen) return null;
@@ -234,36 +291,37 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
           <span>OR</span>
         </div>
 
-        {/* Google Sign-In Container */}
+        {/* Google Sign-In Container: exactly ONE button rendered */}
         <div className="auth-google-container">
           <div ref={googleBtnRef} className="auth-gsi-wrapper"></div>
-          {/* Custom fallback Google button */}
-          <button
-            type="button"
-            className="auth-google-fallback-btn"
-            onClick={handleCustomGoogleClick}
-            disabled={loading}
-          >
-            <svg className="google-icon" viewBox="0 0 24 24" width="18" height="18">
-              <path
-                fill="#4285F4"
-                d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
-              />
-            </svg>
-            Continue with Google
-          </button>
+          {!gsiLoaded && (
+            <button
+              type="button"
+              className="auth-google-fallback-btn"
+              onClick={handleCustomGoogleClick}
+              disabled={loading}
+            >
+              <svg className="google-icon" viewBox="0 0 24 24" width="18" height="18">
+                <path
+                  fill="#4285F4"
+                  d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.33 24 12 24z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                />
+              </svg>
+              Continue with Google
+            </button>
+          )}
         </div>
       </div>
     </div>

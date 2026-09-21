@@ -196,7 +196,7 @@ export async function uploadFile(file) {
 export async function analyzeFile(savedFilename) {
   const response = await fetch(`${API_BASE}/analyze/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ saved_filename: savedFilename }),
   });
 
@@ -222,7 +222,7 @@ export async function getAiInsights({ savedFilename, analysis } = {}) {
 
   const response = await fetch(`${API_BASE}/ai/insights/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
 
@@ -288,6 +288,42 @@ export async function chatDocument({ question, filename, savedFilename, topK = 4
 }
 
 /**
+ * GET /documents/history - unified history of uploaded files and previous work.
+ */
+export async function getUserHistory() {
+  const response = await fetch(`${API_BASE}/documents/history`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load user history.");
+  }
+
+  return response.json();
+}
+
+/**
+ * DELETE /documents/{document_id} - permanently delete document and associated data.
+ */
+export async function deleteDocument(documentId) {
+  const response = await fetch(`${API_BASE}/documents/${documentId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    let detail = "Failed to delete document.";
+    try {
+      const data = await response.json();
+      if (data.detail) detail = data.detail;
+    } catch { /* ignore */ }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}
+
+/**
  * GET /documents/my-documents - list documents owned by authenticated user.
  */
 export async function getMyDocuments() {
@@ -297,6 +333,37 @@ export async function getMyDocuments() {
 
   if (!response.ok) {
     throw new Error("Failed to load user documents.");
+  }
+
+  return response.json();
+}
+
+/**
+ * GET /documents/chat-history - list chat question/answer history for authenticated user.
+ */
+export async function getChatHistory() {
+  const response = await fetch(`${API_BASE}/documents/chat-history`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load chat history.");
+  }
+
+  return response.json();
+}
+
+/**
+ * GET /documents/messages - get all messages for a specific document owned by user.
+ */
+export async function getDocumentMessages(savedFilename) {
+  const url = `${API_BASE}/documents/messages?saved_filename=${encodeURIComponent(savedFilename)}`;
+  const response = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to load document messages.");
   }
 
   return response.json();

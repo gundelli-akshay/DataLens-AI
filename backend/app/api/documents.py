@@ -20,6 +20,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, Request, Depends, status
 from pydantic import BaseModel, Field
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -187,6 +188,108 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
     return file_path, original_filename, extra_params, is_temporary
 
 
+@router.get("/history")
+async def list_user_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return unified document and activity history strictly scoped to the authenticated user.
+    Combines all previously uploaded files (PDF, DOCX, CSV, XLSX) and their previous work:
+    - PDF/DOCX: filename, upload/last activity date, question count, latest Q&A preview, open chat action
+    - CSV/XLSX: filename, upload date, analysis/AI Insights availability, open analysis action
+    """
+    docs = (
+        db.query(Document)
+        .filter(Document.user_id == current_user.id)
+        .order_by(Document.uploaded_at.desc())
+        .all()
+    )
+
+    history = []
+    for doc in docs:
+        saved_name = doc.saved_filename or ""
+        orig_name = doc.original_filename or saved_name or "Document"
+        suffix = Path(saved_name or orig_name).suffix.lower()
+        is_doc = suffix in SUPPORTED_EXTENSIONS or (doc.file_type or "").upper() in ("PDF", "DOCX")
+
+        if is_doc:
+            msgs = (
+                db.query(ChatMessage)
+                .filter(
+                    ChatMessage.document_id == doc.id,
+                    ChatMessage.user_id == current_user.id,
+                )
+                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+                .all()
+            )
+            user_msgs = [m for m in msgs if m.role == "user"]
+            asst_msgs = [m for m in msgs if m.role == "assistant"]
+
+            latest_user_msg = user_msgs[-1] if user_msgs else None
+            latest_asst_msg = None
+            if latest_user_msg:
+                following_asst = [m for m in asst_msgs if m.id > latest_user_msg.id]
+                latest_asst_msg = following_asst[0] if following_asst else (asst_msgs[-1] if asst_msgs else None)
+            else:
+                latest_asst_msg = asst_msgs[-1] if asst_msgs else None
+
+            answer_text = latest_asst_msg.content if latest_asst_msg else ""
+            preview = (
+                answer_text[:160] + "..."
+                if len(answer_text) > 160
+                else answer_text
+            )
+
+            last_active = msgs[-1].created_at if msgs and msgs[-1].created_at else doc.uploaded_at
+
+            history.append({
+                "id": doc.id,
+                "document_id": doc.id,
+                "filename": orig_name,
+                "original_filename": orig_name,
+                "saved_filename": doc.saved_filename,
+                "file_type": doc.file_type or ("DOCX" if suffix == ".docx" else "PDF"),
+                "file_size_bytes": doc.file_size_bytes,
+                "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+                "last_activity": last_active.isoformat() if last_active else None,
+                "has_chat": len(user_msgs) > 0,
+                "question_count": len(user_msgs),
+                "message_count": len(msgs),
+                "latest_question": latest_user_msg.content if latest_user_msg else None,
+                "latest_answer": answer_text if latest_asst_msg else None,
+                "latest_preview": preview if latest_asst_msg else None,
+                "action": "open_chat",
+            })
+        else:
+            has_insights = bool(doc.ai_insights and doc.ai_insights.strip())
+            history.append({
+                "id": doc.id,
+                "document_id": doc.id,
+                "filename": orig_name,
+                "original_filename": orig_name,
+                "saved_filename": doc.saved_filename,
+                "file_type": doc.file_type or ("XLSX" if suffix == ".xlsx" else "CSV"),
+                "file_size_bytes": doc.file_size_bytes,
+                "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+                "last_activity": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
+                "has_analysis": True,
+                "has_insights": has_insights,
+                "action": "open_analysis",
+            })
+
+    history.sort(
+        key=lambda x: x.get("last_activity") or x.get("uploaded_at") or "",
+        reverse=True,
+    )
+
+    return {
+        "status": "success",
+        "count": len(history),
+        "history": history,
+    }
+
+
 @router.get("/my-documents")
 async def list_my_documents(
     db: Session = Depends(get_db),
@@ -212,6 +315,143 @@ async def list_my_documents(
                 "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
             }
             for doc in docs
+        ],
+    }
+
+@router.get("/chat-history")
+async def list_chat_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return chat history strictly scoped to the authenticated user, grouped by document (one entry per document)."""
+    doc_activity = (
+        db.query(
+            ChatMessage.document_id,
+            func.max(ChatMessage.created_at).label("last_active"),
+            func.max(ChatMessage.id).label("latest_msg_id"),
+        )
+        .filter(
+            ChatMessage.user_id == current_user.id,
+            ChatMessage.document_id.isnot(None),
+        )
+        .group_by(ChatMessage.document_id)
+        .order_by(func.max(ChatMessage.created_at).desc(), func.max(ChatMessage.id).desc())
+        .all()
+    )
+
+    history = []
+    for row in doc_activity:
+        doc_id = row.document_id
+        last_active = row.last_active
+
+        doc = db.query(Document).filter(Document.id == doc_id).first()
+        if not doc:
+            continue
+        # Strict user isolation check
+        if doc.user_id is not None and doc.user_id != current_user.id:
+            continue
+
+        msgs = (
+            db.query(ChatMessage)
+            .filter(
+                ChatMessage.document_id == doc_id,
+                ChatMessage.user_id == current_user.id,
+            )
+            .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+            .all()
+        )
+        if not msgs:
+            continue
+
+        user_msgs = [m for m in msgs if m.role == "user"]
+        asst_msgs = [m for m in msgs if m.role == "assistant"]
+
+        latest_user_msg = user_msgs[-1] if user_msgs else None
+        latest_asst_msg = None
+        if latest_user_msg:
+            following_asst = [m for m in asst_msgs if m.id > latest_user_msg.id]
+            latest_asst_msg = following_asst[0] if following_asst else (asst_msgs[-1] if asst_msgs else None)
+        else:
+            latest_asst_msg = asst_msgs[-1] if asst_msgs else None
+
+        answer_text = latest_asst_msg.content if latest_asst_msg else ""
+        preview = (
+            answer_text[:160] + "..."
+            if len(answer_text) > 160
+            else answer_text
+        )
+
+        history.append({
+            "id": doc.id,
+            "document_id": doc.id,
+            "document_name": doc.original_filename or "Document",
+            "saved_filename": doc.saved_filename,
+            "file_type": doc.file_type or "PDF",
+            "question": latest_user_msg.content if latest_user_msg else "",
+            "answer": answer_text,
+            "answer_preview": preview,
+            "timestamp": (
+                last_active.isoformat()
+                if last_active
+                else (msgs[-1].created_at.isoformat() if msgs[-1].created_at else None)
+            ),
+            "message_count": len(msgs),
+            "question_count": len(user_msgs),
+        })
+
+    return {
+        "status": "success",
+        "count": len(history),
+        "history": history,
+    }
+
+
+@router.get("/messages")
+async def get_document_messages(
+    saved_filename: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all chat messages for a specific document owned by the authenticated user."""
+    doc = (
+        db.query(Document)
+        .filter(Document.saved_filename == saved_filename)
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    if doc.user_id is not None and doc.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this document.",
+        )
+
+    messages = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.document_id == doc.id,
+            ChatMessage.user_id == current_user.id,
+        )
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        .all()
+    )
+    return {
+        "status": "success",
+        "document": {
+            "id": doc.id,
+            "original_filename": doc.original_filename,
+            "saved_filename": doc.saved_filename,
+            "file_type": doc.file_type,
+        },
+        "messages": [
+            {
+                "id": msg.id,
+                "role": msg.role,
+                "content": msg.content,
+                "sources": msg.sources or [],
+                "created_at": msg.created_at.isoformat() if msg.created_at else None,
+            }
+            for msg in messages
         ],
     }
 
@@ -552,3 +792,66 @@ async def chat_document_endpoint(
             status_code=500,
             detail="An unexpected internal server error occurred while processing document chat.",
         )
+
+
+@router.delete("/{document_id}")
+async def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Permanently delete a document and all associated data owned by the authenticated user:
+    - Verifies document ownership (cross-user delete blocked with 403 Forbidden).
+    - For PDF/DOCX: deletes Document, ChatMessage records, in-memory RAG index, and uploaded file on disk.
+    - For CSV/XLSX: deletes Document, saved AI Insights, and uploaded file on disk.
+    - Does not expose filesystem paths or sensitive information.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    if doc.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to delete this document.",
+        )
+
+    saved_filename = doc.saved_filename
+    doc_id = doc.id
+
+    # 1. Clean up in-memory vector index for this document & user
+    if saved_filename:
+        try:
+            vector_index.remove_document(saved_filename, user_id=current_user.id)
+        except Exception as e:
+            logger.warning("Error clearing vector index for document %s: %s", saved_filename, e)
+
+    # 2. Delete all ChatMessages associated with this document and user
+    try:
+        db.query(ChatMessage).filter(
+            ChatMessage.document_id == doc_id,
+            ChatMessage.user_id == current_user.id,
+        ).delete(synchronize_session=False)
+    except Exception as e:
+        logger.warning("Error deleting chat messages for document %s: %s", doc_id, e)
+
+    # 3. Delete the uploaded file on disk (without exposing path)
+    if saved_filename:
+        safe_name = Path(saved_filename).name
+        file_path = settings.upload_dir_path / safe_name
+        if file_path.exists() and file_path.is_file():
+            try:
+                file_path.unlink()
+            except Exception as e:
+                logger.warning("Error deleting file %s: %s", safe_name, e)
+
+    # 4. Delete the Document record (cascades or deletes saved ai_insights)
+    db.delete(doc)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Document and associated data permanently deleted.",
+        "deleted_id": doc_id,
+    }

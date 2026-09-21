@@ -49,24 +49,19 @@ _DATE_THRESHOLD = 0.8
 _DATE_MIN_SAMPLE = 3
 
 
-def _detect_category(col: pd.Series) -> str:
+def _detect_category(col_name: str, col: pd.Series) -> str:
     """
-    Classify a column as 'numeric', 'date', or 'categorical'.
+    Classify a column as 'id', 'numeric', 'date', or 'categorical'.
 
     Detection order:
-    1. numeric  -- any integer or float dtype (includes bool, which
-                   NumPy treats as a numeric type)
-    2. date     -- pandas datetime64 dtype, OR an object (string)
-                   column where >= _DATE_THRESHOLD of sampled values
-                   successfully parse as a date via pd.to_datetime()
-    3. categorical -- everything else
-
-    The date-string heuristic samples up to 50 non-null values and
-    runs pd.to_datetime(..., errors="coerce"). Values that cannot be
-    parsed become NaT; we count the parsed fraction. A threshold of
-    0.8 means "Engineering", "North", "Q1" (none parse as dates) stay
-    categorical, while "2019-03-15", "2021-11-01" (all parse) become date.
+    1. id          -- identifier/ID-like column (e.g. 'id', '*_id', consecutive/near-unique keys)
+    2. numeric     -- any integer or float dtype
+    3. date        -- pandas datetime64 or string column where >= _DATE_THRESHOLD parse as dates
+    4. categorical -- everything else
     """
+    if _is_id_column(col_name, col):
+        return "id"
+
     if pd.api.types.is_numeric_dtype(col):
         return "numeric"
 
@@ -74,18 +69,13 @@ def _detect_category(col: pd.Series) -> str:
         return "date"
 
     # Heuristic: check string/object columns for date-like values.
-    # pd.api.types.is_string_dtype() returns True for both legacy
-    # object dtype and newer pandas StringDtype, so it handles
-    # all string column representations across pandas versions.
     if pd.api.types.is_string_dtype(col) and not pd.api.types.is_bool_dtype(col):
         non_null = col.dropna()
         if len(non_null) >= _DATE_MIN_SAMPLE:
-            sample = non_null.head(50)                          # cap for speed
-            # Suppress the pandas "Could not infer format" UserWarning —
-            # errors="coerce" already handles unparseable values safely.
+            sample = non_null.head(50)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", UserWarning)
-                parsed = pd.to_datetime(sample, errors="coerce")   # NaT on failure
+                parsed = pd.to_datetime(sample, errors="coerce")
             parse_rate = parsed.notna().mean()
             if parse_rate >= _DATE_THRESHOLD:
                 return "date"
@@ -120,42 +110,136 @@ def _categorical_summary(col: pd.Series, top_n: int = 5) -> dict:
 
 # ── Chart data helpers ─────────────────────────────────────────
 
-def _is_id_like(col_name: str, series: pd.Series) -> bool:
+def _is_id_column(col_name: str, series: pd.Series) -> bool:
     """
-    Return True if a column looks like a surrogate key rather than a metric.
+    Return True if a column represents an identifier/ID-like field rather than a metric or category.
 
-    Heuristic 1 — name: column name is exactly "id", or starts/ends with
-    "_id" / "id_" (e.g. "employee_id", "user_id").
-
-    Heuristic 2 — values: integers that form a consecutive sequence starting
-    at 0 or 1 (classic auto-increment primary key). This deliberately does
-    NOT flag salary or other numeric columns that happen to be all-unique.
+    Heuristics:
+    1. Name-based match:
+       Exact match or prefix/suffix with id, uuid, guid, identifier, pk (e.g. 'id', 'match_id', 'user_id', 'id_num').
+       Verified if non-null count has reasonable uniqueness (> 20% or unique == count).
+    2. Auto-increment sequence:
+       Consecutive integer sequence [min, min+1, ..., max] (classic primary key / index).
+    3. Near-unique values:
+       For datasets with >= 8 non-null rows:
+       - If >= 95% unique integers with values in reasonable range (excluding common metrics).
+       - If >= 95% unique strings without spaces (codes, hashes, UUIDs, identifiers),
+         excluding descriptive text columns (names, titles, comments, addresses).
     """
-    lower = col_name.lower()
-    if re.search(r"(^|_)id(_|$)", lower):
-        return True
-    # Consecutive integer sequence: sorted values equal [min, min+1, ..., max]
-    if pd.api.types.is_integer_dtype(series) and series.nunique() == len(series):
-        sorted_vals = series.dropna().sort_values().reset_index(drop=True)
+    lower = str(col_name).lower().strip()
+
+    # Exclude common metric/measurement terms unless explicitly containing '_id' or 'id_'
+    metric_stems = [
+        "salary", "revenue", "amount", "price", "cost", "score", "rate", "rating",
+        "fare", "age", "temp", "profit", "sales", "discount", "margin", "weight",
+        "height", "run", "runs", "wicket", "wickets", "point", "points", "year", "date"
+    ]
+    if any(m in lower for m in metric_stems) and not re.search(r"(^|_)(id|uuid|guid|pk)(_|$)", lower):
+        return False
+
+    # Exclude descriptive text columns unless explicitly containing '_id'
+    text_stems = ["name", "title", "description", "desc", "comment", "city", "country", "address", "team"]
+    if any(t in lower for t in text_stems) and not re.search(r"(^|_)(id|uuid|guid|pk)(_|$)", lower):
+        return False
+
+    # 1. Name-based identifier match
+    has_id_name = bool(re.search(r"(^|_)(id|uuid|guid|identifier|pk)(_|$)", lower))
+
+    non_null = series.dropna()
+    n_count = len(non_null)
+    if n_count == 0:
+        return has_id_name
+
+    n_unique = non_null.nunique()
+    uniqueness_ratio = n_unique / n_count
+
+    if has_id_name:
+        if n_unique > 1 and (uniqueness_ratio >= 0.2 or n_unique >= 5 or n_unique == n_count):
+            return True
+
+    # Check minimum row threshold for statistical uniqueness heuristics
+    if n_count < 8:
+        return False
+
+    # 2. Consecutive integer sequence (classic auto-increment ID)
+    if pd.api.types.is_integer_dtype(series) and n_unique == n_count:
+        sorted_vals = non_null.sort_values().reset_index(drop=True)
         if len(sorted_vals) > 0:
-            expected = pd.RangeIndex(start=sorted_vals.iloc[0],
-                                     stop=sorted_vals.iloc[0] + len(sorted_vals))
+            expected = pd.RangeIndex(start=sorted_vals.iloc[0], stop=sorted_vals.iloc[0] + len(sorted_vals))
             if (sorted_vals.values == expected.values).all():
                 return True
+
+    # 3. Near-unique heuristic (>= 95% unique)
+    if uniqueness_ratio >= 0.95:
+        # High-cardinality integers starting >= 0 (e.g. ticket numbers, match ids without 'id' in name)
+        if pd.api.types.is_integer_dtype(series):
+            # Guard against large numbers that represent metrics: max should be within reasonable multiple of count
+            if non_null.min() >= 0 and (non_null.max() <= n_count * 100 or has_id_name):
+                return True
+
+        # High-cardinality strings without spaces (UUIDs, transaction codes, tokens)
+        if pd.api.types.is_string_dtype(series):
+            sample = non_null.head(30).astype(str)
+            space_ratio = sample.str.contains(r"\s").mean()
+            if space_ratio < 0.15:  # Identifiers rarely have whitespace
+                return True
+
+    return False
+
+
+def _is_id_like(col_name: str, series: pd.Series) -> bool:
+    """Alias for _is_id_column for backward compatibility."""
+    return _is_id_column(col_name, series)
+
+
+def _is_low_cardinality_or_ordinal(col_name: str, series: pd.Series) -> bool:
+    """
+    Return True if a numeric column is a low-cardinality discrete, ordinal, or coded rating
+    (such as Education, JobLevel, satisfaction ratings, survey scales) rather than
+    a continuous numeric measurement.
+    """
+    non_null = series.dropna()
+    if len(non_null) == 0:
+        return True
+
+    n_unique = non_null.nunique()
+
+    # Low cardinality (<= 6 unique values) is discrete/ordinal or binary
+    if n_unique <= 6:
+        return True
+
+    lower = str(col_name).lower().strip()
+    ordinal_terms = [
+        "level", "rating", "satisfaction", "education", "tier", "grade",
+        "scale", "rank", "score", "involvement", "balance", "status", "priority",
+        "stage", "performance"
+    ]
+
+    # Coded/ordinal naming with <= 12 unique values
+    if any(term in lower for term in ordinal_terms) and n_unique <= 12:
+        return True
+
+    # Integers with <= 8 unique values
+    if pd.api.types.is_integer_dtype(series) and n_unique <= 8:
+        return True
+
     return False
 
 
 def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
     """
-    Produce up to 3 chart-ready data objects from the DataFrame.
+    Produce up to 3 chart-ready data objects from the DataFrame prioritizing meaningful relationships.
 
     Returned list contains dicts of the form:
       { type, title, x_key, y_key, x_label, y_label, data: [...] }
 
-    Chart types:
-    1. bar     — average of a numeric metric grouped by a categorical column
-    2. line    — numeric metric aggregated over a date column (year/month)
-    3. scatter — two numeric metrics plotted point-by-point
+    Prioritization heuristics:
+    1. Bar chart: Finds the (categorical, numeric) pair where category groups have
+       the highest meaningful variance in metric averages. Falls back to top categorical distribution.
+    2. Line chart: Finds a date column and pairs with the metric showing most variation over time.
+    3. Scatter chart: Calculates pairwise Pearson correlations between numeric metrics and selects
+       the pair with the strongest non-trivial correlation (or highest mutual variance).
+    4. Fallback chart: If no date column exists, provides a secondary distinctive category or distribution.
     """
     charts = []
 
@@ -163,64 +247,98 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
     cat_cols     = [c["name"] for c in col_info if c["category"] == "categorical"]
     date_cols    = [c["name"] for c in col_info if c["category"] == "date"]
 
-    # Prefer real metric columns over surrogate IDs for bar/scatter/line charts.
-    metric_cols = [n for n in numeric_cols if not _is_id_like(n, df[n])]
+    # Filter out ID-like columns and constant columns with 0 variance
+    metric_cols = []
+    for n in numeric_cols:
+        if _is_id_like(n, df[n]):
+            continue
+        s = df[n].dropna()
+        if len(s) >= 2 and s.nunique() > 1:
+            metric_cols.append(n)
+
     if not metric_cols:
-        metric_cols = numeric_cols  # fall back if everything looks like an ID
+        metric_cols = [n for n in numeric_cols if df[n].dropna().nunique() > 1] or numeric_cols
 
-    # ── 1. Bar chart ──────────────────────────────────────────
-    # Needs: a categorical column with 2–15 groups AND more than one value
-    # per group (unique_count / row_count < 0.5 rules out name-like columns).
     n_rows = max(len(df), 1)
-    best_cat = next(
-        (
-            c for c in cat_cols
-            if 2 <= df[c].nunique(dropna=True) <= 15
-            and df[c].nunique(dropna=True) / n_rows <= 0.5
-        ),
-        None,
-    )
-    if best_cat:
-        if metric_cols:
-            # Average metric per category — much more useful than raw counts.
-            num_col = metric_cols[0]
-            grouped = (
-                df.groupby(best_cat)[num_col]
-                  .mean()
-                  .reset_index()
-                  .sort_values(num_col, ascending=False)
-                  .head(10)
-            )
-            charts.append({
-                "type":    "bar",
-                "title":   f"Average {num_col} by {best_cat}",
-                "x_key":   "name",
-                "y_key":   "value",
-                "x_label": best_cat,
-                "y_label": f"Avg {num_col}",
-                "data": [
-                    {"name": str(row[best_cat]), "value": _safe(row[num_col])}
-                    for _, row in grouped.iterrows()
-                ],
-            })
-        else:
-            # No numeric columns — show frequency distribution.
-            vc = df[best_cat].value_counts(dropna=True).head(10)
-            charts.append({
-                "type":    "bar",
-                "title":   f"Distribution of {best_cat}",
-                "x_key":   "name",
-                "y_key":   "value",
-                "x_label": best_cat,
-                "y_label": "Count",
-                "data": [{"name": str(k), "value": int(v)} for k, v in vc.items()],
-            })
 
-    # ── 2. Line chart ─────────────────────────────────────────
-    # Needs: a date column + a metric column, and at least 2 distinct periods.
+    # Valid candidate categories: 2 to 20 unique values, not unique IDs
+    candidate_cats = [
+        c for c in cat_cols
+        if 2 <= df[c].nunique(dropna=True) <= 20
+        and df[c].nunique(dropna=True) / n_rows <= 0.6
+    ]
+
+    selected_bar_cat = None
+    selected_bar_num = None
+
+    # ── 1. Primary Bar Chart: Highest-variance (Category, Metric) relationship ──
+    if candidate_cats and metric_cols:
+        best_score = -1.0
+        best_pair = (candidate_cats[0], metric_cols[0])
+
+        for cat in candidate_cats[:5]:
+            cat_counts = df[cat].value_counts(dropna=True)
+            # Penalize heavily unbalanced categories (e.g. 99% in one class)
+            balance_factor = min(cat_counts) / max(cat_counts.max(), 1)
+
+            for num in metric_cols[:5]:
+                try:
+                    group_means = df.groupby(cat)[num].mean().dropna()
+                    if len(group_means) >= 2:
+                        overall_std = df[num].std()
+                        if overall_std and overall_std > 0:
+                            # Relative spread between category averages
+                            variance_score = (group_means.std() / overall_std) * (0.5 + 0.5 * balance_factor)
+                        else:
+                            variance_score = group_means.std()
+
+                        if variance_score > best_score:
+                            best_score = variance_score
+                            best_pair = (cat, num)
+                except Exception:
+                    continue
+
+        selected_bar_cat, selected_bar_num = best_pair
+        grouped = (
+            df.groupby(selected_bar_cat)[selected_bar_num]
+              .mean()
+              .reset_index()
+              .sort_values(selected_bar_num, ascending=False)
+              .head(10)
+        )
+        charts.append({
+            "type":    "bar",
+            "title":   f"Average {selected_bar_num} by {selected_bar_cat}",
+            "x_key":   "name",
+            "y_key":   "value",
+            "x_label": selected_bar_cat,
+            "y_label": f"Avg {selected_bar_num}",
+            "data": [
+                {"name": str(row[selected_bar_cat]), "value": _safe(row[selected_bar_num])}
+                for _, row in grouped.iterrows()
+            ],
+        })
+
+    elif candidate_cats:
+        # No numeric columns available — frequency distribution of the best category
+        selected_bar_cat = candidate_cats[0]
+        vc = df[selected_bar_cat].value_counts(dropna=True).head(10)
+        charts.append({
+            "type":    "bar",
+            "title":   f"Distribution of {selected_bar_cat}",
+            "x_key":   "name",
+            "y_key":   "value",
+            "x_label": selected_bar_cat,
+            "y_label": "Count",
+            "data": [{"name": str(k), "value": int(v)} for k, v in vc.items()],
+        })
+
+    # ── 2. Line chart: Time-series progression ─────────────────
+    line_added = False
     if date_cols and metric_cols:
         date_col = date_cols[0]
-        num_col  = metric_cols[0]
+        # Choose metric with highest variance over time
+        num_col = selected_bar_num or metric_cols[0]
 
         temp = df[[date_col, num_col]].copy()
         with warnings.catch_warnings():
@@ -230,7 +348,6 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
 
         if len(temp) >= 2:
             date_range_days = (temp[date_col].max() - temp[date_col].min()).days
-            # Group by year if span > 2 years, otherwise by month.
             if date_range_days > 730:
                 temp["period"] = temp[date_col].dt.year.astype(str)
             else:
@@ -255,13 +372,47 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
                         for _, row in grouped.iterrows()
                     ],
                 })
+                line_added = True
 
-    # ── 3. Scatter chart ──────────────────────────────────────
-    # Needs: at least 2 metric columns and 3+ data points.
+    # ── 3. Scatter chart: Best continuous metric correlation ──
     if len(metric_cols) >= 2:
-        x_col = metric_cols[0]
-        y_col = metric_cols[1]
-        sample = df[[x_col, y_col]].dropna().head(200)
+        # Prioritize continuous numeric columns over low-cardinality ordinal ratings
+        continuous_metrics = [
+            n for n in metric_cols
+            if not _is_low_cardinality_or_ordinal(n, df[n])
+        ]
+
+        # Use continuous metrics if >= 2 available; otherwise fall back to metrics sorted by highest unique values
+        scatter_pool = (
+            continuous_metrics
+            if len(continuous_metrics) >= 2
+            else sorted(metric_cols, key=lambda n: df[n].nunique(dropna=True), reverse=True)
+        )
+
+        best_corr_pair = (scatter_pool[0], scatter_pool[1])
+        highest_corr = -1.0
+
+        # Calculate pairwise correlation on continuous pool
+        sub_df = df[scatter_pool[:8]].dropna()
+        if len(sub_df) >= 4:
+            try:
+                corr_matrix = sub_df.corr(method="pearson")
+                for i in range(len(corr_matrix.columns)):
+                    for j in range(i + 1, len(corr_matrix.columns)):
+                        c1 = corr_matrix.columns[i]
+                        c2 = corr_matrix.columns[j]
+                        val = corr_matrix.iloc[i, j]
+                        if pd.notna(val):
+                            abs_val = abs(val)
+                            # Avoid identical duplicate columns (|r| >= 0.9999)
+                            if abs_val < 0.9999 and abs_val > highest_corr:
+                                highest_corr = abs_val
+                                best_corr_pair = (c1, c2)
+            except Exception:
+                pass
+
+        x_col, y_col = best_corr_pair
+        sample = df[[x_col, y_col]].dropna().head(250)
         if len(sample) >= 3:
             charts.append({
                 "type":    "scatter",
@@ -276,7 +427,41 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
                 ],
             })
 
-    return charts  # maximum 3 charts
+    # ── 4. Additional Charts: Secondary Category Breakdowns ──
+    if len(charts) < 4 and len(candidate_cats) >= 2 and metric_cols:
+        used_cats = {selected_bar_cat}
+        for next_cat in candidate_cats:
+            if next_cat in used_cats:
+                continue
+            if len(charts) >= 4:
+                break
+            
+            target_metric = next((m for m in metric_cols if m != selected_bar_num), metric_cols[0])
+            try:
+                grouped2 = (
+                    df.groupby(next_cat)[target_metric]
+                      .mean()
+                      .reset_index()
+                      .sort_values(target_metric, ascending=False)
+                      .head(8)
+                )
+                charts.append({
+                    "type":    "bar",
+                    "title":   f"Average {target_metric} by {next_cat}",
+                    "x_key":   "name",
+                    "y_key":   "value",
+                    "x_label": next_cat,
+                    "y_label": f"Avg {target_metric}",
+                    "data": [
+                        {"name": str(row[next_cat]), "value": _safe(row[target_metric])}
+                        for _, row in grouped2.iterrows()
+                    ],
+                })
+                used_cats.add(next_cat)
+            except Exception:
+                continue
+
+    return charts[:4]
 
 
 # ── Core analyser ───────────────────────────────────────────────
@@ -313,7 +498,7 @@ def analyze_dataframe(df: pd.DataFrame, filename: str, file_type: str) -> dict:
         missing = int(series.isna().sum())
         missing_pct = round((missing / rows * 100), 2) if rows > 0 else 0.0
         unique = _safe(series.nunique(dropna=True))
-        category = _detect_category(series)
+        category = _detect_category(str(col_name), series)
 
         column_info.append({
             "name":          str(col_name),

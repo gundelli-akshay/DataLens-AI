@@ -32,6 +32,11 @@ try:
             if "user_id" not in cols:
                 conn.execute(text("ALTER TABLE chat_messages ADD COLUMN user_id INTEGER;"))
                 conn.commit()
+        if "documents" in inspector.get_table_names():
+            cols = [c["name"] for c in inspector.get_columns("documents")]
+            if "ai_insights" not in cols:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN ai_insights TEXT;"))
+                conn.commit()
 except Exception:
     pass
 

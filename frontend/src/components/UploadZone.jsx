@@ -26,7 +26,7 @@ function humanSize(bytes) {
 }
 
 // ── Component ──────────────────────────────────────────────────
-export default function UploadZone({ onUploadSuccess }) {
+export default function UploadZone({ onUploadSuccess, onReset }) {
   const [state, setState] = useState("idle");   // idle | dragover | uploading | success | error
   const [dragOver, setDragOver] = useState(false);
   const [result, setResult] = useState(null);   // server response on success
@@ -56,6 +56,9 @@ export default function UploadZone({ onUploadSuccess }) {
       setError(validationError);
       return;
     }
+
+    // Clear previous document/chat state when starting a new upload
+    if (onReset) onReset();
 
     setState("uploading");
     setError("");
@@ -105,6 +108,7 @@ export default function UploadZone({ onUploadSuccess }) {
     setState("idle");
     setError("");
     setResult(null);
+    if (onReset) onReset();
   }
 
   // ── Render ─────────────────────────────────────────────────

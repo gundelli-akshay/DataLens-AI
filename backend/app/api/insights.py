@@ -24,6 +24,12 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.services.analysis import analyze_csv, analyze_xlsx
 from app.services.llm import generate_insights
+from app.db.session import get_db
+from app.db.models import Document
+from fastapi import Depends
+from sqlalchemy.orm import Session
+from app.core.auth import get_optional_current_user
+from app.db.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +45,7 @@ class InsightsRequest(BaseModel):
 
 
 @router.post("/")
-def get_insights(request: InsightsRequest):
+def get_insights(request: InsightsRequest, db: Session = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
     """
     Generate natural language insights from data analysis results using an LLM.
     """
@@ -105,6 +111,13 @@ def get_insights(request: InsightsRequest):
 
     try:
         insights_result = generate_insights(analysis_data)
+        if request.saved_filename:
+            doc = db.query(Document).filter(Document.saved_filename == request.saved_filename).first()
+            if doc:
+                if doc.user_id is not None and (current_user is None or doc.user_id != current_user.id):
+                    raise HTTPException(status_code=403, detail="Not authorized to access this document.")
+                doc.ai_insights = insights_result.get("insights")
+                db.commit()
         return insights_result
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))

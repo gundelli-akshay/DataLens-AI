@@ -63,6 +63,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     auth_provider: str
+    created_at: Optional[str] = None
 
 
 class AuthTokenResponse(BaseModel):
@@ -256,5 +257,6 @@ def get_me(current_user: User = Depends(get_current_user)):
             "email": current_user.email,
             "full_name": current_user.full_name,
             "auth_provider": current_user.auth_provider,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
         },
     }

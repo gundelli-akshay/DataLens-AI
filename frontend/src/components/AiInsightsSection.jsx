@@ -1,84 +1,23 @@
-import { useState } from "react";
+import MarkdownRenderer from "./MarkdownRenderer";
+import { useState, useEffect } from "react";
 import { getAiInsights } from "../services/api";
 import "./AiInsightsSection.css";
 
-/**
- * Clean markdown-like renderer for AI insights text.
- * Converts headers (###, ##), bullet points (*, -), and bold (**text**).
- */
-function FormattedInsights({ text }) {
-  if (!text) return null;
-
-  const lines = text.split("\n");
-  const elements = [];
-  let currentList = [];
-
-  function flushList() {
-    if (currentList.length > 0) {
-      elements.push(
-        <ul key={`ul-${elements.length}`} className="ai-insights__list">
-          {currentList.map((item, idx) => (
-            <li key={idx} className="ai-insights__list-item">
-              {renderInline(item)}
-            </li>
-          ))}
-        </ul>
-      );
-      currentList = [];
-    }
-  }
-
-  function renderInline(str) {
-    const parts = str.split(/(\*\*[^*]+\*\*)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return <strong key={i}>{part.slice(2, -2)}</strong>;
-      }
-      return part;
-    });
-  }
-
-  lines.forEach((line, index) => {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      flushList();
-      return;
-    }
-
-    if (trimmed.startsWith("### ")) {
-      flushList();
-      elements.push(
-        <h4 key={`h-${index}`} className="ai-insights__heading">
-          {trimmed.replace(/^###\s*/, "")}
-        </h4>
-      );
-    } else if (trimmed.startsWith("## ")) {
-      flushList();
-      elements.push(
-        <h3 key={`h-${index}`} className="ai-insights__heading-large">
-          {trimmed.replace(/^##\s*/, "")}
-        </h3>
-      );
-    } else if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
-      currentList.push(trimmed.replace(/^[*-]\s*/, ""));
-    } else {
-      flushList();
-      elements.push(
-        <p key={`p-${index}`} className="ai-insights__paragraph">
-          {renderInline(trimmed)}
-        </p>
-      );
-    }
-  });
-
-  flushList();
-  return <div className="ai-insights__body">{elements}</div>;
-}
-
 export default function AiInsightsSection({ analysisData, savedFilename }) {
-  const [status, setStatus] = useState("idle"); // idle | loading | success | error
-  const [insights, setInsights] = useState("");
+  const [status, setStatus] = useState(analysisData?.ai_insights ? "success" : "idle"); // idle | loading | success | error
+  const [insights, setInsights] = useState(analysisData?.ai_insights || "");
+
+  useEffect(() => {
+    if (analysisData?.ai_insights) {
+      setInsights(analysisData.ai_insights);
+      setStatus("success");
+    } else {
+      setInsights("");
+      setStatus("idle");
+    }
+  }, [analysisData]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [copied, setCopied] = useState(false);
 
   async function handleGenerateInsights() {
     setStatus("loading");
@@ -97,6 +36,14 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
     }
   }
 
+  function handleCopy() {
+    if (!insights) return;
+    navigator.clipboard.writeText(insights).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
     <div className="ai-insights" role="region" aria-label="AI Insights">
       <div className="ai-insights__header">
@@ -107,30 +54,39 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
             </svg>
           </span>
           <h3 className="ai-insights__title">AI Insights</h3>
-          <span className="ai-insights__badge">LLM Powered</span>
+          <span className="ai-insights__badge">Grounded Analysis</span>
         </div>
 
         {status === "success" && (
-          <button
-            className="ai-insights__regen-btn"
-            onClick={handleGenerateInsights}
-            aria-label="Regenerate AI Insights"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "4px" }}>
-              <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-              <path d="M3 21v-5h5" />
-            </svg>
-            Regenerate
-          </button>
+          <div className="ai-insights__actions">
+            <button
+              className="ai-insights__copy-btn"
+              onClick={handleCopy}
+              aria-label="Copy insights to clipboard"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+            <button
+              className="ai-insights__regen-btn"
+              onClick={handleGenerateInsights}
+              aria-label="Regenerate AI Insights"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "4px" }}>
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                <path d="M3 21v-5h5" />
+              </svg>
+              Regenerate
+            </button>
+          </div>
         )}
       </div>
 
       {status === "idle" && (
         <div className="ai-insights__idle">
           <p className="ai-insights__desc">
-            Use AI to explain patterns, summarize distributions, and highlight data quality findings from this dataset.
+            Use AI to explain grounded patterns, summarize distributions, and highlight data quality findings from this dataset.
           </p>
           <button
             className="ai-insights__btn"
@@ -148,7 +104,7 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
         <div className="ai-insights__loading" role="status" aria-live="polite">
           <div className="ai-insights__spinner" aria-hidden="true" />
           <p className="ai-insights__loading-text">
-            Analyzing findings and generating AI insights...
+            Synthesizing calculated statistics and generating grounded insights...
           </p>
         </div>
       )}
@@ -177,7 +133,7 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
 
       {status === "success" && (
         <div className="ai-insights__result">
-          <FormattedInsights text={insights} />
+          <MarkdownRenderer content={insights} />
         </div>
       )}
     </div>
