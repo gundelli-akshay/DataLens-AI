@@ -112,6 +112,10 @@ class TestStep9InsightsEndpoint(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        from app.core.auth import get_current_user
+        from app.db.models import User
+        cls.test_user = User(id=1, email="test9@example.com", full_name="Test User", auth_provider="email")
+        app.dependency_overrides[get_current_user] = lambda: cls.test_user
         cls.client = TestClient(app)
         cls.sample_analysis = {
             "status": "success",
@@ -132,6 +136,22 @@ class TestStep9InsightsEndpoint(unittest.TestCase):
                 "dept": {"unique_count": 2, "top_values": [{"value": "Engineering", "count": 3}, {"value": "HR", "count": 2}]}
             },
         }
+
+    @classmethod
+    def tearDownClass(cls):
+        from app.core.auth import get_current_user
+        app.dependency_overrides.pop(get_current_user, None)
+
+    def test_insights_unauthenticated_rejected_with_401(self):
+        """Returns 401 when no auth credentials are provided."""
+        from app.core.auth import get_current_user
+        app.dependency_overrides.pop(get_current_user, None)
+        try:
+            resp = self.client.post("/ai/insights/", json={"analysis": self.sample_analysis})
+            self.assertEqual(resp.status_code, 401)
+            self.assertIn("credentials were not provided", resp.json()["detail"].lower())
+        finally:
+            app.dependency_overrides[get_current_user] = lambda: self.test_user
 
     def test_insights_direct_analysis_success(self):
         """Calling /ai/insights/ with valid analysis dictionary succeeds with mocked LLM."""

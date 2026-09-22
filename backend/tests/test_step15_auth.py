@@ -148,6 +148,7 @@ def test_google_login_new_user(mock_verify, client, db_session):
         "sub": "google-uid-001",
         "email": "googleuser@example.com",
         "name": "Google User",
+        "email_verified": True,
     }
     payload = {"id_token": "mock-google-id-token-xyz"}
     response = client.post("/auth/google", json=payload)
@@ -174,6 +175,7 @@ def test_google_login_reuses_existing_user(mock_verify, client, db_session):
         "sub": "google-uid-002",
         "email": "alice@example.com",
         "name": "Alice Smith Google",
+        "email_verified": True,
     }
     payload = {"credential": "mock-google-credential-token"}
     response = client.post("/auth/google", json=payload)
@@ -296,17 +298,31 @@ def test_upload_attaches_user_id_when_authenticated(client, db_session):
     assert doc.user_id == alice_id
 
 
-def test_csv_analysis_unchanged_and_unauthenticated(client):
-    """CSV analysis continues to work without authentication."""
+def test_unauthenticated_upload_and_analysis_rejected_with_401(client, db_session):
+    """Unauthenticated file upload and analysis flows are strictly rejected with 401."""
     csv_content = b"col1,col2\n10,20\n30,40\n"
     files = {"file": ("test_data.csv", csv_content, "text/csv")}
 
-    upload_res = client.post("/upload/", files=files)
-    assert upload_res.status_code == 200
-    saved_name = upload_res.json()["saved_filename"]
+    # 1. Unauthenticated upload is rejected
+    upload_unauth = client.post("/upload/", files=files)
+    assert upload_unauth.status_code == 401
+    assert "credentials were not provided" in upload_unauth.json()["detail"].lower()
 
-    analyze_res = client.post("/analyze/", json={"saved_filename": saved_name})
-    assert analyze_res.status_code == 200
-    data = analyze_res.json()
+    # 2. Unauthenticated analyze is rejected
+    analyze_unauth = client.post("/analyze/", json={"saved_filename": "dummy.csv"})
+    assert analyze_unauth.status_code == 401
+    assert "credentials were not provided" in analyze_unauth.json()["detail"].lower()
+
+    # 3. Authenticated upload and analyze succeed
+    alice_token = client.post("/auth/login", json={"email": "alice@example.com", "password": "Password123!"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {alice_token}"}
+    files = {"file": ("test_data.csv", csv_content, "text/csv")}
+    upload_auth = client.post("/upload/", headers=headers, files=files)
+    assert upload_auth.status_code == 200
+    saved_name = upload_auth.json()["saved_filename"]
+
+    analyze_auth = client.post("/analyze/", headers=headers, json={"saved_filename": saved_name})
+    assert analyze_auth.status_code == 200
+    data = analyze_auth.json()
     assert data["shape"]["rows"] == 2
     assert data["shape"]["columns"] == 2

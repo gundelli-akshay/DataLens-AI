@@ -10,13 +10,15 @@ import "./ChartPanel.css";
 // ── Constants ─────────────────────────────────────────────────
 const H   = 260;   // chart height in pixels
 const CLR = {
-  bar:      "#6366f1",
-  barHover: "#818cf8",
-  line:     "#22c55e",
-  scatter:  "#a78bfa",
-  grid:     "rgba(255,255,255,0.06)",
-  axis:     "#475569",
-  tick:     "#64748b",
+  bar:            "#6366f1",
+  barHover:       "#818cf8",
+  line:           "#22c55e",
+  scatter:        "#a78bfa",
+  histogram:      "#f59e0b",
+  histogramHover: "#fbbf24",
+  grid:           "rgba(255,255,255,0.06)",
+  axis:           "#475569",
+  tick:           "#64748b",
 };
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -194,7 +196,49 @@ function ScatterCard({ chart }) {
 }
 
 // ── Chart type badge ───────────────────────────────────────────
-const TYPE_LABEL = { bar: "Bar", line: "Line", scatter: "Scatter" };
+// ─── Histogram chart card ────────────────────────────────────────────────────
+function HistogramCard({ chart }) {
+  const longLabels = chart.data.some((d) => String(d.name).length > 8);
+  return (
+    <div className="cp-card" aria-label={chart.title}>
+      <p className="cp-card__title">{chart.title}</p>
+      <p className="cp-card__subtitle">{chart.y_label} &mdash; {chart.x_label}</p>
+      <ResponsiveContainer width="100%" height={H}>
+        <BarChart
+          data={chart.data}
+          margin={{ top: 8, right: 16, left: 4, bottom: longLabels ? 44 : 12 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke={CLR.grid} vertical={false} />
+          <XAxis
+            dataKey="name"
+            tick={{ fill: CLR.tick, fontSize: 11 }}
+            angle={longLabels ? -28 : 0}
+            textAnchor={longLabels ? "end" : "middle"}
+            interval={0}
+            stroke={CLR.axis}
+          />
+          <YAxis
+            tickFormatter={tickFmt}
+            tick={{ fill: CLR.tick, fontSize: 11 }}
+            stroke={CLR.axis}
+            width={52}
+          />
+          <Tooltip content={<ChartTooltip />} />
+          <Bar
+            dataKey="value"
+            name={chart.y_label}
+            fill={CLR.histogram}
+            radius={[5, 5, 0, 0]}
+            activeBar={{ fill: CLR.histogramHover }}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ─── Chart type badge ────────────────────────────────────────────────────────
+const TYPE_LABEL = { bar: "Bar", line: "Line", scatter: "Scatter", histogram: "Histogram" };
 
 // ── Main export ────────────────────────────────────────────────
 export default function ChartPanel({ charts }) {
@@ -214,9 +258,10 @@ export default function ChartPanel({ charts }) {
       </div>
       <div className="cp-grid">
         {charts.map((chart, i) => {
-          if (chart.type === "bar")     return <BarCard     key={i} chart={chart} />;
-          if (chart.type === "line")    return <LineCard    key={i} chart={chart} />;
-          if (chart.type === "scatter") return <ScatterCard key={i} chart={chart} />;
+          if (chart.type === "bar")       return <BarCard       key={i} chart={chart} />;
+          if (chart.type === "line")      return <LineCard      key={i} chart={chart} />;
+          if (chart.type === "scatter")   return <ScatterCard   key={i} chart={chart} />;
+          if (chart.type === "histogram") return <HistogramCard key={i} chart={chart} />;
           return null;
         })}
       </div>

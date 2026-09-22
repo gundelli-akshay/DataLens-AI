@@ -1,8 +1,8 @@
-﻿import { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { uploadFile } from "../services/api";
 import "./UploadZone.css";
 
-// ── Constants ──────────────────────────────────────────────────
+// Constants
 const ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".pdf", ".docx"];
 const MAX_SIZE_MB = 20;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
@@ -14,7 +14,7 @@ const FORMAT_META = {
   ".docx": { label: "DOCX", color: "#a78bfa" },
 };
 
-// ── Helper ─────────────────────────────────────────────────────
+// Helper
 function getExtension(filename) {
   return ("." + filename.split(".").pop()).toLowerCase();
 }
@@ -25,15 +25,15 @@ function humanSize(bytes) {
   return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
 }
 
-// ── Component ──────────────────────────────────────────────────
-export default function UploadZone({ onUploadSuccess, onReset }) {
+// Component
+export default function UploadZone({ user, onRequireAuth, onUploadSuccess, onReset }) {
   const [state, setState] = useState("idle");   // idle | dragover | uploading | success | error
   const [dragOver, setDragOver] = useState(false);
   const [result, setResult] = useState(null);   // server response on success
   const [error, setError] = useState("");        // error message
   const inputRef = useRef(null);
 
-  // ── Client-side validation ─────────────────────────────────
+  // Client-side validation
   function validateFile(file) {
     const ext = getExtension(file.name);
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
@@ -48,8 +48,13 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
     return null; // valid
   }
 
-  // ── Upload handler ─────────────────────────────────────────
+  // Upload handler
   async function handleFile(file) {
+    if (!user) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
+
     const validationError = validateFile(file);
     if (validationError) {
       setState("error");
@@ -75,7 +80,16 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
     }
   }
 
-  // ── Drag events ────────────────────────────────────────────
+  // Droparea click handler
+  function handleDropAreaClick() {
+    if (!user) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
+    inputRef.current?.click();
+  }
+
+  // Drag events
   function onDragOver(e) {
     e.preventDefault();
     e.stopPropagation();
@@ -92,12 +106,21 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
+    if (!user) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
     const file = e.dataTransfer.files?.[0];
     if (file) handleFile(file);
   }
 
-  // ── File input change ──────────────────────────────────────
+  // File input change
   function onInputChange(e) {
+    if (!user) {
+      if (onRequireAuth) onRequireAuth();
+      e.target.value = "";
+      return;
+    }
     const file = e.target.files?.[0];
     if (file) handleFile(file);
     // Reset input so the same file can be re-selected
@@ -111,22 +134,22 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
     if (onReset) onReset();
   }
 
-  // ── Render ─────────────────────────────────────────────────
+  // Render
   return (
     <section className="upload-zone" aria-label="File upload area">
-      {/* ── Idle / Drag-over state ── */}
+      {/* Idle / Drag-over state */}
       {(state === "idle" || state === "dragover") && (
         <>
           <div
-            className={`upload-zone__droparea${dragOver ? " upload-zone__droparea--active" : ""}`}
+            className={`upload-zone__droparea${dragOver ? " upload-zone__droparea--active" : ""}${!user ? " upload-zone__droparea--unauth" : ""}`}
             onDragOver={onDragOver}
             onDragLeave={onDragLeave}
             onDrop={onDrop}
-            onClick={() => inputRef.current?.click()}
+            onClick={handleDropAreaClick}
             role="button"
             tabIndex={0}
-            aria-label="Drop a file here or click to browse"
-            onKeyDown={(e) => e.key === "Enter" && inputRef.current?.click()}
+            aria-label={user ? "Drop a file here or click to browse" : "Sign in to upload and analyze files"}
+            onKeyDown={(e) => e.key === "Enter" && handleDropAreaClick()}
           >
             <div className="upload-zone__icon" aria-hidden="true">
               <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
@@ -150,22 +173,34 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
 
             <div className="upload-zone__text">
               <p className="upload-zone__primary">
-                {dragOver ? "Release to upload" : "Drop your file here"}
+                {!user
+                  ? "Sign in to upload & analyze files"
+                  : dragOver
+                  ? "Release to upload"
+                  : "Drop your file here"}
               </p>
               <p className="upload-zone__secondary">
-                {dragOver ? "" : <>or <span className="upload-zone__browse">browse to upload</span></>}
+                {!user ? (
+                  <>or <span className="upload-zone__browse">click here to sign in</span></>
+                ) : dragOver ? (
+                  ""
+                ) : (
+                  <>or <span className="upload-zone__browse">browse to upload</span></>
+                )}
               </p>
             </div>
 
-            <input
-              ref={inputRef}
-              type="file"
-              accept=".csv,.xlsx,.pdf,.docx"
-              onChange={onInputChange}
-              className="upload-zone__input"
-              aria-hidden="true"
-              tabIndex={-1}
-            />
+            {user && (
+              <input
+                ref={inputRef}
+                type="file"
+                accept=".csv,.xlsx,.pdf,.docx"
+                onChange={onInputChange}
+                className="upload-zone__input"
+                aria-hidden="true"
+                tabIndex={-1}
+              />
+            )}
           </div>
 
           {/* Format badges */}
@@ -186,7 +221,7 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
         </>
       )}
 
-      {/* ── Uploading state ── */}
+      {/* Uploading state */}
       {state === "uploading" && (
         <div className="upload-state upload-state--uploading" role="status" aria-live="polite">
           <div className="upload-spinner" aria-hidden="true">
@@ -200,12 +235,12 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
               />
             </svg>
           </div>
-          <p className="upload-state__title">Uploading…</p>
+          <p className="upload-state__title">Uploading...</p>
           <p className="upload-state__sub">Please wait</p>
         </div>
       )}
 
-      {/* ── Success state ── */}
+      {/* Success state */}
       {state === "success" && result && (
         <div className="upload-state upload-state--success" role="status" aria-live="polite">
           <div className="upload-state__icon upload-state__icon--success" aria-hidden="true">
@@ -244,7 +279,7 @@ export default function UploadZone({ onUploadSuccess, onReset }) {
         </div>
       )}
 
-      {/* ── Error state ── */}
+      {/* Error state */}
       {state === "error" && (
         <div className="upload-state upload-state--error" role="alert" aria-live="assertive">
           <div className="upload-state__icon upload-state__icon--error" aria-hidden="true">

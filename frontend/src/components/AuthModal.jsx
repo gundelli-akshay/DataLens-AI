@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { login, signup, loginWithGoogle } from "../services/api";
+import { login, signup, loginWithGoogle, getAuthConfig } from "../services/api";
 import "./AuthModal.css";
 
 export default function AuthModal({
@@ -16,13 +16,29 @@ export default function AuthModal({
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [gsiLoaded, setGsiLoaded] = useState(false);
+  const [dynamicClientId, setDynamicClientId] = useState("");
 
   const googleBtnRef = useRef(null);
+  const initializedClientIdRef = useRef("");
+
+  // Fetch configured Google Client ID from backend if not passed as prop or env
+  useEffect(() => {
+    let active = true;
+    getAuthConfig().then((cfg) => {
+      if (active && cfg?.google_client_id) {
+        setDynamicClientId(cfg.google_client_id);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const activeClientId =
     googleClientId ||
-    (typeof window !== "undefined" && window.__DATA_LENS_CONFIG__?.googleClientId) ||
     import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+    dynamicClientId ||
+    (typeof window !== "undefined" && window.__DATA_LENS_CONFIG__?.googleClientId) ||
     "";
 
   useEffect(() => {
@@ -36,7 +52,7 @@ export default function AuthModal({
       setPassword("");
       setFullName("");
     }
-  }, [isOpen, mode, activeClientId]);
+  }, [isOpen, activeClientId]);
 
   // Google Identity Services integration
   useEffect(() => {
@@ -65,24 +81,32 @@ export default function AuthModal({
       if (window.google?.accounts?.id) {
         try {
           googleBtnRef.current.innerHTML = "";
-          window.google.accounts.id.initialize({
-            client_id: activeClientId,
-            callback: async (response) => {
-              if (response?.credential) {
-                setLoading(true);
-                setErrorMsg("");
-                try {
-                  const res = await loginWithGoogle(response.credential);
-                  onSuccess(res.user);
-                  onClose();
-                } catch (err) {
-                  setErrorMsg(err.message || "Google Sign-In failed.");
-                } finally {
-                  setLoading(false);
+          if (initializedClientIdRef.current !== activeClientId) {
+            window.google.accounts.id.initialize({
+              client_id: activeClientId,
+              callback: async (response) => {
+                if (response?.credential) {
+                  setLoading(true);
+                  setErrorMsg("");
+                  try {
+                    const res = await loginWithGoogle(response.credential);
+                    onSuccess(res.user);
+                    onClose();
+                  } catch (err) {
+                    setErrorMsg(err.message || "Google Sign-In failed.");
+                  } finally {
+                    setLoading(false);
+                  }
                 }
-              }
-            },
-          });
+              },
+              auto_select: false,
+              cancel_on_tap_outside: true,
+              itp_support: true,
+              ux_mode: "popup",
+              context: "signin",
+            });
+            initializedClientIdRef.current = activeClientId;
+          }
 
           window.google.accounts.id.renderButton(googleBtnRef.current, {
             theme: "outline",
@@ -168,11 +192,7 @@ export default function AuthModal({
       setErrorMsg("Google Sign-In is not configured. Please sign in with Email & Password.");
       return;
     }
-    if (window.google?.accounts?.id) {
-      window.google.accounts.id.prompt();
-    } else {
-      setErrorMsg("Google Sign-In is initializing. Please try again or use Email/Password.");
-    }
+    setErrorMsg("Google Sign-In is loading. Please wait a moment for the button to appear or use Email/Password.");
   }
 
   return (

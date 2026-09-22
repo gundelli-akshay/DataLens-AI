@@ -48,26 +48,71 @@ STOP_WORDS = {
 
 
 def _tokenize_text(text: str) -> list[str]:
-    """Tokenize text into lowercase alphanumeric words, filtering single chars & stopwords."""
+    """Tokenize text into lowercase alphanumeric words, filtering stopwords while preserving digits and tokens."""
     if not text:
         return []
     words = re.findall(r"\b[a-zA-Z0-9_\-\.]+\b", text.lower())
-    return [w for w in words if len(w) > 1 and w not in STOP_WORDS]
+    return [w for w in words if (len(w) > 1 or w.isdigit()) and w not in STOP_WORDS]
 
 
 def _stem_token(w: str) -> str:
     """Lightweight suffix stripping for high-accuracy keyword matching."""
+    if not w:
+        return ""
+    if w in ("author", "authors"):
+        return "author"
+    if w in ("degree", "degrees"):
+        return "degree"
     if w.endswith("ies") and len(w) > 4:
-        return w[:-3] + "y"
-    if w.endswith("ing") and len(w) > 4:
-        return w[:-3]
-    if w.endswith("ed") and len(w) > 3:
-        return w[:-2]
-    if w.endswith("es") and len(w) > 3:
-        return w[:-2]
-    if w.endswith("s") and len(w) > 2 and not w.endswith("ss"):
-        return w[:-1]
+        w = w[:-3] + "y"
+    elif w.endswith("ing") and len(w) > 4:
+        w = w[:-3]
+    elif w.endswith("ed") and len(w) > 3:
+        w = w[:-2]
+    elif w.endswith("es") and len(w) > 3:
+        w = w[:-2]
+    elif w.endswith("s") and len(w) > 2 and not w.endswith("ss"):
+        w = w[:-1]
+
+    if (w.endswith("ers") or w.endswith("ors")) and len(w) > 4:
+        w = w[:-1]
+    if (w.endswith("er") or w.endswith("or")) and len(w) > 4 and w not in ("author", "paper", "chapter", "server", "order"):
+        w = w[:-2]
+    elif w.endswith("ment") and len(w) > 5:
+        w = w[:-4]
+    elif (w.endswith("tion") or w.endswith("sion")) and len(w) > 5:
+        w = w[:-4]
+    elif w.endswith("ity") and len(w) > 5:
+        w = w[:-3]
     return w
+
+
+COMMON_FACTUAL_ATTRIBUTES: dict[str, set[str]] = {
+    "developer": {"developer", "develop", "author", "creator", "creat", "submitted", "submit", "submitt", "engineer", "architect", "builder"},
+    "develop": {"developer", "develop", "author", "creator", "creat", "submitted", "submit", "submitt", "engineer", "architect", "builder"},
+    "author": {"author", "developer", "develop", "writer", "creator", "creat", "submitted", "submit", "submitt", "researcher", "contributor"},
+    "creator": {"creator", "creat", "developer", "develop", "author", "founder", "maker", "builder"},
+    "creat": {"creator", "creat", "developer", "develop", "author", "founder", "maker", "builder"},
+    "title": {"title", "name", "heading", "topic"},
+    "name": {"name", "title", "called", "named"},
+    "degree": {"degree", "bachelor", "master", "phd", "doctorate", "diploma", "btech", "mtech", "bsc", "msc", "qualification"},
+    "technologies": {"technology", "technologies", "tech", "stack", "tools", "tool", "framework", "frameworks", "library", "libraries"},
+    "technology": {"technology", "technologies", "tech", "stack", "tools", "tool", "framework", "frameworks", "library", "libraries"},
+    "feature": {"feature", "features", "capability", "capabilities", "functionality", "functions", "modules"},
+    "features": {"feature", "features", "capability", "capabilities", "functionality", "functions", "modules"},
+    "workflow": {"workflow", "process", "pipeline", "steps", "stages", "flow", "lifecycle"},
+    "entity": {"entity", "entities", "schema", "tables", "models", "attributes"},
+    "entities": {"entity", "entities", "schema", "tables", "models", "attributes"},
+}
+
+FACTUAL_LABEL_PATTERNS = [
+    (re.compile(r"(project\s+report\s+on|project\s+title|project\s+name|system\s+name|document\s+title)", re.IGNORECASE), {"title", "name"}),
+    (re.compile(r"(submitted\s+by|developed\s+by|authored\s+by|created\s+by|prepared\s+by|written\s+by|author(s)?|developer(s)?|creator(s)?)", re.IGNORECASE), {"developer", "author", "creator", "develop", "creat"}),
+    (re.compile(r"(degree\s+of|degree|bachelor\s+of|master\s+of|b\.tech|m\.tech|btech|mtech|b\.sc|m\.sc|ph\.d|doctor\s+of)", re.IGNORECASE), {"degree", "qualification"}),
+    (re.compile(r"(technologies\s+used|tech\s+stack|tools\s+used|technology\s+stack|system\s+architecture)", re.IGNORECASE), {"technology", "technologies", "tech", "stack", "tools"}),
+    (re.compile(r"(user\s+workflow|workflow|pipeline|user\s+capabilities|workflow\s+and\s+features)", re.IGNORECASE), {"workflow", "pipeline", "process"}),
+    (re.compile(r"(key\s+features|core\s+features|features|module\s+specification|system\s+modules)", re.IGNORECASE), {"feature", "features", "module", "modules"}),
+]
 
 
 def strip_formatting_instructions(query: str) -> str:
@@ -153,8 +198,13 @@ class BM25Scorer:
 
         self.avg_doc_len = sum(self.doc_lens) / max(1, self.corpus_size)
 
-    def score(self, query: str) -> list[float]:
+    def score(self, query: str, expanded_tokens: list[str] | None = None) -> list[float]:
         q_tokens = [_stem_token(t) for t in _tokenize_text(query)]
+        if expanded_tokens:
+            for et in expanded_tokens:
+                st = _stem_token(et)
+                if st and st not in q_tokens:
+                    q_tokens.append(st)
         if not q_tokens or self.corpus_size == 0:
             return [0.0] * self.corpus_size
 
@@ -456,9 +506,20 @@ class InMemoryVectorIndex:
 
         # 3. Compute BM25 Lexical Keyword Overlap Scores if query string is present
         if q_str:
+            raw_tokens = _tokenize_text(q_str)
+            stemmed_q_tokens = set(_stem_token(t) for t in raw_tokens)
+
+            # Find generalized attribute synonyms for common factual questions
+            expanded_tokens = set()
+            for tok in raw_tokens:
+                st = _stem_token(tok)
+                for key, syns in COMMON_FACTUAL_ATTRIBUTES.items():
+                    if tok == key or st == key or st in syns:
+                        expanded_tokens.update(syns)
+
             corpus_texts = [self.chunks[i]["text"] for i in indices]
             bm25 = BM25Scorer(corpus_texts)
-            bm25_scores = np.array(bm25.score(q_str), dtype=np.float32)
+            bm25_scores = np.array(bm25.score(q_str, expanded_tokens=list(expanded_tokens)), dtype=np.float32)
 
             # Min-Max Normalization
             d_min, d_max = float(dense_similarities.min()), float(dense_similarities.max())
@@ -467,18 +528,46 @@ class InMemoryVectorIndex:
             b_min, b_max = float(bm25_scores.min()), float(bm25_scores.max())
             if b_max > 0:
                 b_norm = (bm25_scores - b_min) / (b_max - b_min + 1e-6)
-                # Weighted hybrid combination: 0.55 dense + 0.45 lexical
-                hybrid_scores = 0.55 * d_norm + 0.45 * b_norm
-
-                # Exact keyword and phrase matching bonus
-                q_tokens = [_stem_token(t) for t in _tokenize_text(q_str)]
-                for i_pos, text in enumerate(corpus_texts):
-                    text_tokens = set([_stem_token(t) for t in _tokenize_text(text)])
-                    match_ratio = len(text_tokens.intersection(q_tokens)) / max(1, len(q_tokens))
-                    if match_ratio >= 0.5:
-                        hybrid_scores[i_pos] += 0.2 * match_ratio
+                # Weighted hybrid combination: 0.50 dense + 0.50 lexical
+                hybrid_scores = 0.50 * d_norm + 0.50 * b_norm
             else:
-                hybrid_scores = d_norm
+                hybrid_scores = d_norm.copy()
+
+            # Exact keyword and attribute term matching bonus
+            all_terms = stemmed_q_tokens.union([_stem_token(e) for e in expanded_tokens])
+            for i_pos, text in enumerate(corpus_texts):
+                text_tokens = set([_stem_token(tk) for tk in _tokenize_text(text)])
+                match_ratio = len(text_tokens.intersection(all_terms)) / max(1, len(stemmed_q_tokens))
+                if match_ratio >= 0.5:
+                    hybrid_scores[i_pos] += 0.30 * min(match_ratio, 2.0)
+
+                # Direct factual label pattern bonus (e.g. "Submitted by:", "Technologies Used:", "Project Title:")
+                for pattern, trig_terms in FACTUAL_LABEL_PATTERNS:
+                    if trig_terms.intersection(stemmed_q_tokens) or trig_terms.intersection(raw_tokens):
+                        if pattern.search(text):
+                            hybrid_scores[i_pos] += 0.50
+                            break
+
+                # Preamble / Title chunk relevance for document identity questions (title, author, developer, degree)
+                identity_terms = {"title", "name", "author", "developer", "develop", "creator", "creat", "degree", "qualification"}
+                if identity_terms.intersection(stemmed_q_tokens) or identity_terms.intersection(raw_tokens):
+                    chunk_idx = self.chunks[indices[i_pos]].get("chunk_index", 0)
+                    page_num = self.chunks[indices[i_pos]].get("page_number") or 0
+                    if chunk_idx == 1 or page_num == 1:
+                        if any(k in text.lower() for k in ["title", "project", "report", "submitted", "author", "developer", "degree", "department", "by"]):
+                            hybrid_scores[i_pos] += 0.35
+
+            # Multi-word phrase matching bonus (e.g. "Level 2", "Data Flow Diagram", "Blood Bank")
+            q_clean_lower = q_str.lower()
+            q_words = [w for w in re.findall(r"\b[a-zA-Z0-9_\-]+\b", q_clean_lower) if w not in STOP_WORDS]
+            q_bigrams = [f"{q_words[bi]} {q_words[bi+1]}" for bi in range(len(q_words) - 1)] if len(q_words) >= 2 else []
+
+            for i_pos, text in enumerate(corpus_texts):
+                t_lower = text.lower()
+                if q_bigrams:
+                    matching_bigrams = sum(1 for bg in q_bigrams if bg in t_lower)
+                    if matching_bigrams > 0:
+                        hybrid_scores[i_pos] += 0.25 * min(matching_bigrams, 3)
 
             final_scores = hybrid_scores
         else:
@@ -486,9 +575,33 @@ class InMemoryVectorIndex:
 
         ranked_order = np.argsort(-final_scores)
         k = min(top_k, len(indices))
-        results: list[dict[str, Any]] = []
 
-        for r_i in ranked_order[:k]:
+        # Diverse selection to prevent a single page from saturating the top results
+        selected_order = []
+        page_counts: Counter[Any] = Counter()
+        max_per_page = max(2, k // 2)
+
+        for r_i in ranked_order:
+            orig_i = indices[r_i]
+            p_num = self.chunks[orig_i].get("page_number")
+            if p_num is not None:
+                if page_counts[p_num] < max_per_page:
+                    selected_order.append(r_i)
+                    page_counts[p_num] += 1
+            else:
+                selected_order.append(r_i)
+            if len(selected_order) >= k:
+                break
+
+        if len(selected_order) < k:
+            for r_i in ranked_order:
+                if r_i not in selected_order:
+                    selected_order.append(r_i)
+                    if len(selected_order) >= k:
+                        break
+
+        results: list[dict[str, Any]] = []
+        for r_i in selected_order[:k]:
             orig_i = indices[r_i]
             chunk_copy = dict(self.chunks[orig_i])
             chunk_copy["score"] = round(float(final_scores[r_i]), 4)

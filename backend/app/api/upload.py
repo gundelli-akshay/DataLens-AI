@@ -1,5 +1,3 @@
-import logging
-import urllib.parse
 """
 api/upload.py - File upload endpoint.
 
@@ -17,6 +15,7 @@ Security notes:
   - Local filesystem paths are never returned to the client.
 """
 
+import logging
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -25,8 +24,10 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, Depends
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models import Document, User
-from app.core.auth import get_optional_current_user
+from app.core.auth import get_current_user
 from app.core.config import settings
+from app.services.storage import storage_service, StorageError
+import urllib.parse
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def _human_size(n: int) -> str:
 async def upload_file(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload a single file (CSV, XLSX, PDF, or DOCX).
@@ -130,15 +131,25 @@ async def upload_file(
             detail="The uploaded file is empty. Please choose a valid file.",
         )
 
-    # -- 4. Save to disk ----------------------------------------
+    # -- 4. Save to persistent storage --------------------------
     saved_name = _safe_filename(clean_name)
-    upload_path = settings.upload_dir_path / saved_name
-    upload_path.write_bytes(content)
+    try:
+        storage_service.save_file(
+            saved_filename=saved_name,
+            content=content,
+            content_type=file.content_type or "application/octet-stream",
+        )
+    except StorageError as exc:
+        logger.error("Storage upload failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to store uploaded file in persistent storage. Please try again.",
+        )
 
     # -- 5. Save to DB (for all uploaded files) -----------------
     if suffix in ALLOWED_EXTENSIONS:
         doc_record = Document(
-            user_id=current_user.id if current_user else None,
+            user_id=current_user.id,
             original_filename=clean_name,
             saved_filename=saved_name,
             file_type=EXTENSION_LABELS[suffix],

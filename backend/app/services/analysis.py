@@ -228,20 +228,21 @@ def _is_low_cardinality_or_ordinal(col_name: str, series: pd.Series) -> bool:
 
 def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
     """
-    Produce up to 3 chart-ready data objects from the DataFrame prioritizing meaningful relationships.
+    Produce up to 4 simple and meaningful charts prioritizing distinct chart types:
+    1. Bar chart -> compare categories/groups
+    2. Line chart -> show change/trend over time or ordered values
+    3. Histogram -> show distribution of a continuous numeric variable across clean equal-width bins
+    4. Scatter plot -> show relationship between two continuous numeric variables
 
-    Returned list contains dicts of the form:
-      { type, title, x_key, y_key, x_label, y_label, data: [...] }
-
-    Prioritization heuristics:
-    1. Bar chart: Finds the (categorical, numeric) pair where category groups have
-       the highest meaningful variance in metric averages. Falls back to top categorical distribution.
-    2. Line chart: Finds a date column and pairs with the metric showing most variation over time.
-    3. Scatter chart: Calculates pairwise Pearson correlations between numeric metrics and selects
-       the pair with the strongest non-trivial correlation (or highest mutual variance).
-    4. Fallback chart: If no date column exists, provides a secondary distinctive category or distribution.
+    Rules:
+    - Prioritize distinct chart types when data supports them.
+    - If the dataset does not genuinely support a chart type, omit it rather than creating misleading charts.
+    - Avoid ID columns, unique identifiers, meaningless high-cardinality fields, and low-cardinality ordinal ratings in scatter/histograms.
+    - Clear, beginner-friendly titles that explain WHAT is being shown (e.g. "Sales by Region", "Monthly Revenue Trend", "Distribution of Employee Age", "Salary vs Years of Experience").
+    - Ensure displayed chart values match the underlying calculated data exactly.
     """
     charts = []
+    used_types = set()
 
     numeric_cols = [c["name"] for c in col_info if c["category"] == "numeric"]
     cat_cols     = [c["name"] for c in col_info if c["category"] == "categorical"]
@@ -250,7 +251,7 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
     # Filter out ID-like columns and constant columns with 0 variance
     metric_cols = []
     for n in numeric_cols:
-        if _is_id_like(n, df[n]):
+        if _is_id_column(n, df[n]):
             continue
         s = df[n].dropna()
         if len(s) >= 2 and s.nunique() > 1:
@@ -258,6 +259,11 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
 
     if not metric_cols:
         metric_cols = [n for n in numeric_cols if df[n].dropna().nunique() > 1] or numeric_cols
+
+    continuous_metrics = [
+        n for n in metric_cols
+        if not _is_low_cardinality_or_ordinal(n, df[n])
+    ]
 
     n_rows = max(len(df), 1)
 
@@ -271,23 +277,21 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
     selected_bar_cat = None
     selected_bar_num = None
 
-    # ── 1. Primary Bar Chart: Highest-variance (Category, Metric) relationship ──
+    # 1. Bar Chart: Compare categories/groups with highest group variance
     if candidate_cats and metric_cols:
         best_score = -1.0
         best_pair = (candidate_cats[0], metric_cols[0])
 
-        for cat in candidate_cats[:5]:
+        for cat in candidate_cats[:6]:
             cat_counts = df[cat].value_counts(dropna=True)
-            # Penalize heavily unbalanced categories (e.g. 99% in one class)
             balance_factor = min(cat_counts) / max(cat_counts.max(), 1)
 
-            for num in metric_cols[:5]:
+            for num in metric_cols[:6]:
                 try:
                     group_means = df.groupby(cat)[num].mean().dropna()
                     if len(group_means) >= 2:
                         overall_std = df[num].std()
                         if overall_std and overall_std > 0:
-                            # Relative spread between category averages
                             variance_score = (group_means.std() / overall_std) * (0.5 + 0.5 * balance_factor)
                         else:
                             variance_score = group_means.std()
@@ -318,9 +322,10 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
                 for _, row in grouped.iterrows()
             ],
         })
+        used_types.add("bar")
 
     elif candidate_cats:
-        # No numeric columns available — frequency distribution of the best category
+        # Frequency distribution of the most balanced category
         selected_bar_cat = candidate_cats[0]
         vc = df[selected_bar_cat].value_counts(dropna=True).head(10)
         charts.append({
@@ -332,12 +337,11 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
             "y_label": "Count",
             "data": [{"name": str(k), "value": int(v)} for k, v in vc.items()],
         })
+        used_types.add("bar")
 
-    # ── 2. Line chart: Time-series progression ─────────────────
-    line_added = False
-    if date_cols and metric_cols:
+    # 2. Line Chart: Show change/trend over time or ordered sequence
+    if "line" not in used_types and date_cols and metric_cols:
         date_col = date_cols[0]
-        # Choose metric with highest variance over time
         num_col = selected_bar_num or metric_cols[0]
 
         temp = df[[date_col, num_col]].copy()
@@ -350,39 +354,88 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
             date_range_days = (temp[date_col].max() - temp[date_col].min()).days
             if date_range_days > 730:
                 temp["period"] = temp[date_col].dt.year.astype(str)
-            else:
+                title_text = f"Annual {num_col} Trend"
+            elif date_range_days > 60:
                 temp["period"] = temp[date_col].dt.to_period("M").astype(str)
+                title_text = f"Monthly {num_col} Trend"
+            else:
+                temp["period"] = temp[date_col].dt.strftime("%Y-%m-%d")
+                title_text = f"{num_col} Trend over Time"
 
-            grouped = (
+            grouped_line = (
                 temp.groupby("period")[num_col]
                     .mean()
                     .reset_index()
                     .sort_values("period")
             )
-            if len(grouped) >= 2:
+            if len(grouped_line) >= 2:
                 charts.append({
                     "type":    "line",
-                    "title":   f"{num_col} over time",
+                    "title":   title_text,
                     "x_key":   "period",
                     "y_key":   "value",
                     "x_label": date_col,
                     "y_label": f"Avg {num_col}",
                     "data": [
                         {"period": str(row["period"]), "value": _safe(row[num_col])}
-                        for _, row in grouped.iterrows()
+                        for _, row in grouped_line.iterrows()
                     ],
                 })
-                line_added = True
+                used_types.add("line")
 
-    # ── 3. Scatter chart: Best continuous metric correlation ──
-    if len(metric_cols) >= 2:
-        # Prioritize continuous numeric columns over low-cardinality ordinal ratings
-        continuous_metrics = [
-            n for n in metric_cols
-            if not _is_low_cardinality_or_ordinal(n, df[n])
-        ]
+    # 3. Histogram: Distribution of a continuous numeric variable across clean equal-width bins
+    # Requires >= 8 non-null rows and >= 5 unique values for a meaningful statistical distribution
+    if "histogram" not in used_types and metric_cols and n_rows >= 8:
+        priority_terms = ["income", "salary", "age", "revenue", "fare", "price", "sales", "cost", "amount", "rate"]
+        hist_pool = continuous_metrics if continuous_metrics else metric_cols
 
-        # Use continuous metrics if >= 2 available; otherwise fall back to metrics sorted by highest unique values
+        def _hist_priority(col: str) -> int:
+            c_low = col.lower()
+            for idx, term in enumerate(priority_terms):
+                if term in c_low:
+                    return idx
+            return 99
+
+        sorted_hist_pool = sorted(hist_pool, key=lambda c: (_hist_priority(c), -df[c].nunique(dropna=True)))
+
+        hist_col = None
+        for cand in sorted_hist_pool:
+            cand_s = df[cand].dropna()
+            if len(cand_s) >= 8 and cand_s.nunique() >= 5:
+                hist_col = cand
+                break
+
+        if hist_col:
+            s_hist = df[hist_col].dropna()
+            n_bins = min(8, max(4, min(s_hist.nunique() // 2, 8)))
+            counts, bin_edges = np.histogram(s_hist, bins=n_bins)
+
+            bin_data = []
+            is_int = pd.api.types.is_integer_dtype(s_hist) or (s_hist.round() == s_hist).all()
+            for b_idx in range(len(counts)):
+                low = bin_edges[b_idx]
+                high = bin_edges[b_idx + 1]
+                if low >= 1000 or high >= 1000:
+                    lbl = f"{low:,.0f} - {high:,.0f}"
+                elif is_int:
+                    lbl = f"{int(round(low))} - {int(round(high))}"
+                else:
+                    lbl = f"{low:.1f} - {high:.1f}"
+                bin_data.append({"name": lbl, "value": int(counts[b_idx])})
+
+            charts.append({
+                "type":    "histogram",
+                "title":   f"Distribution of {hist_col}",
+                "x_key":   "name",
+                "y_key":   "value",
+                "x_label": f"{hist_col} Range",
+                "y_label": "Frequency",
+                "data":    bin_data,
+            })
+            used_types.add("histogram")
+
+    # 4. Scatter Plot: Relationship between two continuous numeric variables
+    if "scatter" not in used_types and len(metric_cols) >= 2:
         scatter_pool = (
             continuous_metrics
             if len(continuous_metrics) >= 2
@@ -392,7 +445,6 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
         best_corr_pair = (scatter_pool[0], scatter_pool[1])
         highest_corr = -1.0
 
-        # Calculate pairwise correlation on continuous pool
         sub_df = df[scatter_pool[:8]].dropna()
         if len(sub_df) >= 4:
             try:
@@ -404,8 +456,8 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
                         val = corr_matrix.iloc[i, j]
                         if pd.notna(val):
                             abs_val = abs(val)
-                            # Avoid identical duplicate columns (|r| >= 0.9999)
-                            if abs_val < 0.9999 and abs_val > highest_corr:
+                            # Avoid identical duplicate columns (|r| >= 0.999)
+                            if 0.05 <= abs_val < 0.999 and abs_val > highest_corr:
                                 highest_corr = abs_val
                                 best_corr_pair = (c1, c2)
             except Exception:
@@ -426,8 +478,9 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
                     for _, row in sample.iterrows()
                 ],
             })
+            used_types.add("scatter")
 
-    # ── 4. Additional Charts: Secondary Category Breakdowns ──
+    # 5. Additional distinct category breakdown when slots remain (< 4 charts)
     if len(charts) < 4 and len(candidate_cats) >= 2 and metric_cols:
         used_cats = {selected_bar_cat}
         for next_cat in candidate_cats:
@@ -435,7 +488,7 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
                 continue
             if len(charts) >= 4:
                 break
-            
+
             target_metric = next((m for m in metric_cols if m != selected_bar_num), metric_cols[0])
             try:
                 grouped2 = (
@@ -464,7 +517,7 @@ def _generate_chart_data(df: pd.DataFrame, col_info: list) -> list:
     return charts[:4]
 
 
-# ── Core analyser ───────────────────────────────────────────────
+# ─── Core analyser ────────────────────────────────────────────────────────────
 
 def analyze_dataframe(df: pd.DataFrame, filename: str, file_type: str) -> dict:
     """

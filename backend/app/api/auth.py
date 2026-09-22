@@ -181,6 +181,13 @@ def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)):
             detail=f"Invalid Google ID token: {str(exc)}",
         )
 
+    # Mandatory security check: require verified email address from Google
+    if not idinfo.get("email_verified", False):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Google account email is not verified.",
+        )
+
     email = idinfo.get("email")
     if not email:
         raise HTTPException(

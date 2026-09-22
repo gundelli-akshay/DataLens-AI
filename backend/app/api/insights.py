@@ -1,4 +1,3 @@
-import logging
 """
 api/insights.py - AI Insights endpoint.
 
@@ -10,33 +9,33 @@ POST /ai/insights/
     {
       "status": "success",
       "insights": "markdown string",
-      "model": "gpt-4o-mini"
+      "model": "gemini-3.8-flash" or "openai/gpt-oss-20b"
     }
 """
 
-import re
+import logging
 from pathlib import Path
+import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.core.config import settings
+from app.db.models import Document, User
+from app.db.session import get_db
 from app.services.analysis import analyze_csv, analyze_xlsx
 from app.services.llm import generate_insights
-from app.db.session import get_db
-from app.db.models import Document
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from app.core.auth import get_optional_current_user
-from app.db.models import User
+from app.services.storage import storage_service, StorageError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai/insights", tags=["AI Insights"])
 
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
-DOCUMENT_EXTENSIONS  = {".pdf", ".docx"}
+DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
 
 
 class InsightsRequest(BaseModel):
@@ -45,11 +44,32 @@ class InsightsRequest(BaseModel):
 
 
 @router.post("/")
-def get_insights(request: InsightsRequest, db: Session = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
+def get_insights(
+    request: InsightsRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
-    Generate natural language insights from data analysis results using an LLM.
+    Generate natural language insights from data analysis results using Gemini (primary)
+    or Groq (secondary/fallback).
     """
     analysis_data = request.analysis
+    doc = None
+
+    # If saved_filename is given, perform eager authorization and input validation
+    if request.saved_filename:
+        filename = request.saved_filename
+        if chr(0) in filename:
+            raise HTTPException(status_code=400, detail="Invalid filename.")
+
+        safe_name = Path(filename).name
+        if safe_name != filename:
+            raise HTTPException(status_code=400, detail="Invalid filename.")
+
+        # Eager authorization check
+        doc = db.query(Document).filter(Document.saved_filename == safe_name).first()
+        if doc and doc.user_id is not None and doc.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to access this document.")
 
     # If analysis dictionary was not directly provided, compute it from saved_filename
     if not analysis_data:
@@ -59,19 +79,20 @@ def get_insights(request: InsightsRequest, db: Session = Depends(get_db), curren
                 detail="Either 'analysis' or 'saved_filename' must be provided.",
             )
 
-        filename = request.saved_filename
-        if "\x00" in filename:
-            raise HTTPException(status_code=400, detail="Invalid filename.")
+        safe_name = Path(request.saved_filename).name
 
-        safe_name = Path(filename).name
-        if safe_name != filename:
-            raise HTTPException(status_code=400, detail="Invalid filename.")
-
-        file_path = settings.upload_dir_path / safe_name
-        if not file_path.exists():
+        try:
+            file_path = storage_service.get_file_path(safe_name)
+        except FileNotFoundError:
             raise HTTPException(
                 status_code=404,
                 detail=f"File '{safe_name}' was not found in uploads.",
+            )
+        except StorageError as exc:
+            logger.error("Failed to retrieve file '%s' from storage: %s", safe_name, exc)
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to retrieve file from persistent storage.",
             )
 
         suffix = file_path.suffix.lower()
@@ -80,7 +101,7 @@ def get_insights(request: InsightsRequest, db: Session = Depends(get_db), curren
                 status_code=422,
                 detail=(
                     f"{suffix.lstrip('.').upper()} files are not supported for data analysis insights. "
-                    "Document analysis will be added in a future step."
+                    "Document analysis is available in Document Chat."
                 ),
             )
 
@@ -111,14 +132,12 @@ def get_insights(request: InsightsRequest, db: Session = Depends(get_db), curren
 
     try:
         insights_result = generate_insights(analysis_data)
-        if request.saved_filename:
-            doc = db.query(Document).filter(Document.saved_filename == request.saved_filename).first()
-            if doc:
-                if doc.user_id is not None and (current_user is None or doc.user_id != current_user.id):
-                    raise HTTPException(status_code=403, detail="Not authorized to access this document.")
-                doc.ai_insights = insights_result.get("insights")
-                db.commit()
+        if doc:
+            doc.ai_insights = insights_result.get("insights")
+            db.commit()
         return insights_result
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except RuntimeError as exc:

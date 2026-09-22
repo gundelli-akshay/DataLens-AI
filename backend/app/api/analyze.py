@@ -1,6 +1,5 @@
-import logging
 """
-api/analyze.py — CSV / XLSX Analysis endpoint.
+api/analyze.py - CSV / XLSX Analysis endpoint.
 
 POST /analyze/
   Accepts:  { "saved_filename": "uuid_filename.csv" }
@@ -9,20 +8,20 @@ POST /analyze/
   Returns:   structured JSON analysis report
 """
 
-import re
+import logging
 from pathlib import Path
+import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-
-from app.core.config import settings
-from app.services.analysis import analyze_csv, analyze_xlsx
-from app.db.session import get_db
-from app.db.models import Document
-from fastapi import Depends
 from sqlalchemy.orm import Session
-from app.core.auth import get_optional_current_user
-from app.db.models import User
+
+from app.core.auth import get_current_user
+from app.core.config import settings
+from app.db.models import Document, User
+from app.db.session import get_db
+from app.services.analysis import analyze_csv, analyze_xlsx
+from app.services.storage import storage_service, StorageError
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/analyze", tags=["Analysis"])
 
 # -- File type classification ------------------------------------
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
-DOCUMENT_EXTENSIONS  = {".pdf", ".docx"}
+DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
 
 
 # -- Request schema ----------------------------------------------
@@ -44,24 +43,34 @@ class AnalyzeRequest(BaseModel):
 
 # -- Router ------------------------------------------------------
 @router.post("/")
-def analyze_file(request: AnalyzeRequest, db: Session = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
+def analyze_file(
+    request: AnalyzeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Analyse a previously uploaded CSV or XLSX file.
-    The file must already exist in data/uploads/ (uploaded via POST /upload/).
+    The file must already exist in persistent storage (uploaded via POST /upload/).
     Returns a structured JSON summary produced by Pandas.
     """
     # -- 1. Sanitise the filename -----------------------------
     filename = request.saved_filename
-    if "\x00" in filename:
+    if chr(0) in filename:
         raise HTTPException(status_code=400, detail="Invalid filename.")
 
     safe_name = Path(filename).name
     if safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid filename.")
 
-    # -- 2. Resolve and verify the file exists ----------------
-    file_path = settings.upload_dir_path / safe_name
-    if not file_path.exists():
+    # -- 2. Authorization check if document is tracked in DB --
+    doc = db.query(Document).filter(Document.saved_filename == safe_name).first()
+    if doc and doc.user_id is not None and doc.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this document.")
+
+    # -- 3. Resolve and verify the file exists ----------------
+    try:
+        file_path = storage_service.get_file_path(safe_name)
+    except FileNotFoundError:
         raise HTTPException(
             status_code=404,
             detail=(
@@ -69,8 +78,14 @@ def analyze_file(request: AnalyzeRequest, db: Session = Depends(get_db), current
                 "Please upload the file first via POST /upload/."
             ),
         )
+    except StorageError as exc:
+        logger.error("Failed to retrieve file '%s' from storage: %s", safe_name, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Failed to retrieve file from persistent storage.",
+        )
 
-    # -- 3. Classify the file type ----------------------------
+    # -- 4. Classify the file type ----------------------------
     suffix = file_path.suffix.lower()
 
     if suffix in DOCUMENT_EXTENSIONS:
@@ -78,7 +93,7 @@ def analyze_file(request: AnalyzeRequest, db: Session = Depends(get_db), current
             status_code=422,
             detail=(
                 f"{suffix.lstrip('.').upper()} files are not supported for data analysis. "
-                "Document analysis (PDF/DOCX) will be added in a future step."
+                "Document analysis (PDF/DOCX) is available in Document Chat."
             ),
         )
 
@@ -91,22 +106,20 @@ def analyze_file(request: AnalyzeRequest, db: Session = Depends(get_db), current
             ),
         )
 
-    # -- 4. Derive the original filename for display ----------
+    # -- 5. Derive the original filename for display ----------
     original_filename = re.sub(r"^[0-9a-f]{32}_", "", safe_name, count=1) or safe_name
 
-    # -- 5. Run the appropriate analysis ---------------------
+    # -- 6. Run the appropriate analysis ---------------------
     try:
         if suffix == ".csv":
             result = analyze_csv(file_path, original_filename)
         else:
             result = analyze_xlsx(file_path, original_filename)
 
-        doc = db.query(Document).filter(Document.saved_filename == safe_name).first()
-        if doc:
-            if doc.user_id is not None and (current_user is None or doc.user_id != current_user.id):
-                raise HTTPException(status_code=403, detail="Not authorized to access this document.")
-            if doc.ai_insights:
-                result["ai_insights"] = doc.ai_insights
+        if doc and doc.ai_insights:
+            result["ai_insights"] = doc.ai_insights
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Analysis execution error: %s", exc, exc_info=True)
         raise HTTPException(
@@ -114,7 +127,7 @@ def analyze_file(request: AnalyzeRequest, db: Session = Depends(get_db), current
             detail="An unexpected internal server error occurred while analyzing the file.",
         )
 
-    # -- 6. Surface analysis errors as HTTP errors ------------
+    # -- 7. Surface analysis errors as HTTP errors ------------
     if result.get("status") == "error":
         raise HTTPException(status_code=422, detail=result["message"])
 

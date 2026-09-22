@@ -8,6 +8,7 @@ import AnalysisResults from "./components/AnalysisResults";
 import DocumentChat from "./components/DocumentChat";
 import AuthModal from "./components/AuthModal";
 import UserMenuModal from "./components/UserMenuModal";
+import SignOutModal from "./components/SignOutModal";
 import "./App.css";
 
 const ANALYSIS_TYPES = ["CSV", "XLSX"];
@@ -20,6 +21,7 @@ export default function App() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [userModalOpen, setUserModalOpen] = useState(false);
   const [userModalTab, setUserModalTab] = useState("profile");
+  const [signOutModalOpen, setSignOutModalOpen] = useState(false);
 
   // Workspace and document state
   const [uploadResult, setUploadResult] = useState(null);
@@ -68,12 +70,18 @@ export default function App() {
     setAnalysisState("idle");
   }
 
-  // Complete workspace reset on sign out
-  function handleSignOut() {
+  // Prompt confirmation modal when user clicks Sign Out
+  function handleRequestSignOut() {
+    setSignOutModalOpen(true);
+  }
+
+  // Complete workspace reset on confirmed sign out
+  function handleConfirmSignOut() {
     clearAuthData();
     setUser(null);
     setUserModalOpen(false);
     setAuthModalOpen(false);
+    setSignOutModalOpen(false);
     handleResetUpload();
     setWorkspaceKey((prev) => prev + 1);
   }
@@ -81,6 +89,18 @@ export default function App() {
   function handleOpenUserMenu(tab) {
     setUserModalTab(tab || "profile");
     setUserModalOpen(true);
+  }
+
+  async function runTabularAnalysis(savedFilename) {
+    setAnalysisState("loading");
+    try {
+      const result = await analyzeFile(savedFilename);
+      setAnalysisData(result);
+      setAnalysisState("success");
+    } catch (err) {
+      setAnalysisState("error");
+      setAnalysisError(err.message || "Analysis failed. Please try again.");
+    }
   }
 
   async function handleSelectDocument(doc) {
@@ -98,15 +118,7 @@ export default function App() {
     setAnalysisError("");
 
     if (ANALYSIS_TYPES.includes(formattedDoc.file_type)) {
-      setAnalysisState("loading");
-      try {
-        const result = await analyzeFile(formattedDoc.saved_filename);
-        setAnalysisData(result);
-        setAnalysisState("success");
-      } catch (err) {
-        setAnalysisState("error");
-        setAnalysisError(err.message || "Analysis failed. Please try again.");
-      }
+      await runTabularAnalysis(formattedDoc.saved_filename);
     } else {
       setAnalysisState("idle");
     }
@@ -131,15 +143,7 @@ export default function App() {
       return;
     }
 
-    setAnalysisState("loading");
-    try {
-      const result = await analyzeFile(uploadData.saved_filename);
-      setAnalysisData(result);
-      setAnalysisState("success");
-    } catch (err) {
-      setAnalysisState("error");
-      setAnalysisError(err.message || "Analysis failed. Please try again.");
-    }
+    await runTabularAnalysis(uploadData.saved_filename);
   }
 
   // Decide what to render in the results card
@@ -218,7 +222,7 @@ export default function App() {
         user={user}
         onOpenAuth={() => setAuthModalOpen(true)}
         onOpenUserMenu={handleOpenUserMenu}
-        onSignOut={handleSignOut}
+        onSignOut={handleRequestSignOut}
       />
 
       <main className="main">
@@ -241,7 +245,7 @@ export default function App() {
         {/* Upload Card */}
         <div className="card">
           <div className="card__label">Step 1 - Upload a file</div>
-          <UploadZone key={workspaceKey} onUploadSuccess={handleUploadSuccess} onReset={handleResetUpload} />
+          <UploadZone key={workspaceKey} user={user} onRequireAuth={() => setAuthModalOpen(true)} onUploadSuccess={handleUploadSuccess} onReset={handleResetUpload} />
         </div>
 
         {/* Results / Analysis Card */}
@@ -267,7 +271,14 @@ export default function App() {
         user={user}
         onClose={() => setUserModalOpen(false)}
         onSelectDocument={handleSelectDocument}
-        onSignOut={handleSignOut}
+        onSignOut={handleRequestSignOut}
+      />
+
+      {/* Sign Out Confirmation Modal */}
+      <SignOutModal
+        isOpen={signOutModalOpen}
+        onClose={() => setSignOutModalOpen(false)}
+        onConfirm={handleConfirmSignOut}
       />
     </div>
   );

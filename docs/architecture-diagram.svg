@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 760" width="100%" height="100%" style="background-color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="clientGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="webGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="backendGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="serviceGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="100%" stop-color="#1e293b" />
+    </linearGradient>
+    <linearGradient id="dbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="aiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+
+    <!-- Shadow Filter -->
+    <filter id="cardShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+
+    <!-- Markers -->
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#94a3b8" />
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="42" text-anchor="middle" fill="#f8fafc" font-size="22" font-weight="700" letter-spacing="0.5">DataLens AI ? High-Level Architecture</text>
+
+  <!-- Layer 1: User Browser -->
+  <g transform="translate(325, 70)" filter="url(#cardShadow)">
+    <rect width="250" height="60" rx="10" fill="url(#clientGrad)" stroke="#38bdf8" stroke-width="1.5" />
+    <text x="125" y="30" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="700">User Browser</text>
+    <text x="125" y="48" text-anchor="middle" fill="#e0f2fe" font-size="12">Interactive Web Client (HTTP / REST)</text>
+  </g>
+
+  <!-- Flow 1: Client -> Frontend -->
+  <line x1="450" y1="130" x2="450" y2="168" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Layer 2: Frontend & Reverse Proxy -->
+  <g transform="translate(250, 172)" filter="url(#cardShadow)">
+    <rect width="400" height="70" rx="10" fill="url(#webGrad)" stroke="#a5b4fc" stroke-width="1.5" />
+    <text x="200" y="32" text-anchor="middle" fill="#ffffff" font-size="16" font-weight="700">React / Vite SPA + Nginx</text>
+    <text x="200" y="52" text-anchor="middle" fill="#e0e7ff" font-size="12">Static UI Assets &amp; Reverse Proxy (Ports 3000 / 5173)</text>
+  </g>
+
+  <!-- Flow 2: Frontend -> Backend -->
+  <line x1="450" y1="242" x2="450" y2="280" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+  <text x="495" y="265" fill="#94a3b8" font-size="11">/api/* proxy</text>
+
+  <!-- Layer 3: FastAPI Backend Container -->
+  <g transform="translate(80, 284)" filter="url(#cardShadow)">
+    <!-- Container Box -->
+    <rect width="740" height="270" rx="12" fill="url(#backendGrad)" stroke="#3b82f6" stroke-width="1.5" />
+    <rect x="0" y="0" width="740" height="36" rx="12" fill="#1e3a8a" opacity="0.4" />
+    <text x="20" y="24" fill="#60a5fa" font-size="14" font-weight="700">FastAPI Backend Container (Port 8000)</text>
+
+    <!-- Subsystem 1: Authentication -->
+    <g transform="translate(20, 52)">
+      <rect width="160" height="95" rx="8" fill="url(#serviceGrad)" stroke="#475569" stroke-width="1" />
+      <text x="80" y="28" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Authentication</text>
+      <text x="80" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">? Email &amp; Bcrypt</text>
+      <text x="80" y="68" text-anchor="middle" fill="#94a3b8" font-size="11">? Google OAuth 2.0</text>
+      <text x="80" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">? Signed JWT Tokens</text>
+    </g>
+
+    <!-- Subsystem 2: Analytics / Charts -->
+    <g transform="translate(195, 52)">
+      <rect width="170" height="95" rx="8" fill="url(#serviceGrad)" stroke="#475569" stroke-width="1" />
+      <text x="85" y="28" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Analytics &amp; Charts</text>
+      <text x="85" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">? CSV &amp; XLSX Profiling</text>
+      <text x="85" y="68" text-anchor="middle" fill="#94a3b8" font-size="11">? Statistical Summaries</text>
+      <text x="85" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">? Recharts Visualizations</text>
+    </g>
+
+    <!-- Subsystem 3: PDF/DOCX + RAG -->
+    <g transform="translate(380, 52)">
+      <rect width="165" height="95" rx="8" fill="url(#serviceGrad)" stroke="#475569" stroke-width="1" />
+      <text x="82" y="28" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">PDF/DOCX + RAG</text>
+      <text x="82" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">? PyMuPDF &amp; python-docx</text>
+      <text x="82" y="68" text-anchor="middle" fill="#94a3b8" font-size="11">? Semantic Chunking</text>
+      <text x="82" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">? Page-Grounded Q&amp;A</text>
+    </g>
+
+    <!-- Subsystem 4: AI Routing & Models -->
+    <g transform="translate(560, 52)">
+      <rect width="160" height="95" rx="8" fill="url(#serviceGrad)" stroke="#f59e0b" stroke-width="1" />
+      <text x="80" y="28" text-anchor="middle" fill="#fbbf24" font-size="13" font-weight="600">AI Routing Engine</text>
+      <text x="80" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">? Smart Failover</text>
+      <text x="80" y="68" text-anchor="middle" fill="#94a3b8" font-size="11">? Prompt Grounding</text>
+      <text x="80" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">? Zero Hallucination</text>
+    </g>
+
+    <!-- Subsystem 4 Detail: Gemini + Groq Fallback -->
+    <g transform="translate(470, 168)">
+      <rect width="250" height="85" rx="8" fill="#1e293b" stroke="#64748b" stroke-width="1" />
+      <text x="125" y="22" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="600">LLM Provider Tier</text>
+
+      <!-- Gemini Box -->
+      <rect x="15" y="32" width="105" height="42" rx="6" fill="#1e3a8a" stroke="#60a5fa" stroke-width="1" />
+      <text x="67" y="50" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="600">Gemini 3.8 Flash</text>
+      <text x="67" y="64" text-anchor="middle" fill="#93c5fd" font-size="9">(Primary)</text>
+
+      <!-- Arrow -->
+      <path d="M 124 53 L 138 53" stroke="#f59e0b" stroke-width="1.5" marker-end="url(#arrow)" />
+
+      <!-- Groq Box -->
+      <rect x="142" y="32" width="95" height="42" rx="6" fill="#451a03" stroke="#f59e0b" stroke-width="1" />
+      <text x="189" y="50" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="600">Groq Cloud</text>
+      <text x="189" y="64" text-anchor="middle" fill="#fde68a" font-size="9">(Fallback)</text>
+    </g>
+  </g>
+
+  <!-- Flow 3: Backend -> Persistence Layer -->
+  <line x1="280" y1="554" x2="280" y2="606" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+  <line x1="620" y1="554" x2="620" y2="606" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)" />
+
+  <!-- Layer 4: Persistence Services -->
+  <!-- Supabase PostgreSQL -->
+  <g transform="translate(130, 610)" filter="url(#cardShadow)">
+    <rect width="300" height="90" rx="10" fill="url(#dbGrad)" stroke="#6ee7b7" stroke-width="1.5" />
+    <text x="150" y="32" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="700">Supabase PostgreSQL</text>
+    <text x="150" y="54" text-anchor="middle" fill="#ecfdf5" font-size="12">? Users &amp; Credentials</text>
+    <text x="150" y="72" text-anchor="middle" fill="#ecfdf5" font-size="12">? Documents Metadata &amp; Chat History</text>
+  </g>
+
+  <!-- Supabase Storage -->
+  <g transform="translate(470, 610)" filter="url(#cardShadow)">
+    <rect width="300" height="90" rx="10" fill="url(#dbGrad)" stroke="#6ee7b7" stroke-width="1.5" />
+    <text x="150" y="32" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="700">Supabase Storage</text>
+    <text x="150" y="54" text-anchor="middle" fill="#ecfdf5" font-size="12">? Bucket: "datalens-files"</text>
+    <text x="150" y="72" text-anchor="middle" fill="#ecfdf5" font-size="12">? Persistent Raw Artifacts (CSV, XLSX, PDF, DOCX)</text>
+  </g>
+</svg>

@@ -1,4 +1,3 @@
-import logging
 """
 api/documents.py - Document extraction, indexing, and RAG retrieval endpoints.
 
@@ -13,10 +12,13 @@ Endpoints:
 Protected: All document and chat endpoints require authentication and enforce multi-tenant isolation.
 """
 
+import collections
+import logging
 from pathlib import Path
 import re
 from typing import Any, Optional
 import uuid
+from app.services.storage import storage_service, StorageError
 
 from fastapi import APIRouter, HTTPException, Request, Depends, status
 from pydantic import BaseModel, Field
@@ -178,6 +180,12 @@ async def _resolve_document_file(request: Request) -> tuple[Path, str, dict[str,
 
         file_path = settings.upload_dir_path / safe_name
         if not file_path.exists():
+            try:
+                file_path = storage_service.get_file_path(safe_name)
+            except Exception:
+                pass
+
+        if not file_path.exists():
             raise HTTPException(
                 status_code=404,
                 detail=f"File '{safe_name}' was not found. Please upload the file first via POST /upload/.",
@@ -206,6 +214,21 @@ async def list_user_history(
         .all()
     )
 
+    doc_ids = [d.id for d in docs]
+    all_msgs = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.document_id.in_(doc_ids),
+            ChatMessage.user_id == current_user.id,
+        )
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        .all()
+    ) if doc_ids else []
+
+    msgs_by_doc = collections.defaultdict(list)
+    for m in all_msgs:
+        msgs_by_doc[m.document_id].append(m)
+
     history = []
     for doc in docs:
         saved_name = doc.saved_filename or ""
@@ -214,15 +237,7 @@ async def list_user_history(
         is_doc = suffix in SUPPORTED_EXTENSIONS or (doc.file_type or "").upper() in ("PDF", "DOCX")
 
         if is_doc:
-            msgs = (
-                db.query(ChatMessage)
-                .filter(
-                    ChatMessage.document_id == doc.id,
-                    ChatMessage.user_id == current_user.id,
-                )
-                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
-                .all()
-            )
+            msgs = msgs_by_doc[doc.id]
             user_msgs = [m for m in msgs if m.role == "user"]
             asst_msgs = [m for m in msgs if m.role == "assistant"]
 
@@ -339,27 +354,42 @@ async def list_chat_history(
         .all()
     )
 
+    doc_ids = [row.document_id for row in doc_activity]
+    docs_by_id = {
+        d.id: d
+        for d in db.query(Document).filter(
+            Document.id.in_(doc_ids),
+            (Document.user_id == current_user.id) | (Document.user_id.is_(None))
+        ).all()
+    } if doc_ids else {}
+
+    all_chat_history_msgs = (
+        db.query(ChatMessage)
+        .filter(
+            ChatMessage.document_id.in_(doc_ids),
+            ChatMessage.user_id == current_user.id,
+        )
+        .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
+        .all()
+    ) if doc_ids else []
+
+    chat_msgs_by_doc = collections.defaultdict(list)
+    for m in all_chat_history_msgs:
+        chat_msgs_by_doc[m.document_id].append(m)
+
     history = []
     for row in doc_activity:
         doc_id = row.document_id
         last_active = row.last_active
 
-        doc = db.query(Document).filter(Document.id == doc_id).first()
+        doc = docs_by_id.get(doc_id)
         if not doc:
             continue
         # Strict user isolation check
         if doc.user_id is not None and doc.user_id != current_user.id:
             continue
 
-        msgs = (
-            db.query(ChatMessage)
-            .filter(
-                ChatMessage.document_id == doc_id,
-                ChatMessage.user_id == current_user.id,
-            )
-            .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
-            .all()
-        )
+        msgs = chat_msgs_by_doc[doc_id]
         if not msgs:
             continue
 
@@ -555,6 +585,31 @@ async def index_document_endpoint(
             detail=f"chunk_overlap ({chunk_overlap}) must be strictly less than chunk_size ({chunk_size}).",
         )
 
+    # Reuse existing in-memory index when available to avoid duplicate extraction & embedding work
+    if not is_temporary:
+        base_name = file_path.name
+        existing_doc_chunks = [
+            c for c in vector_index.chunks
+            if c.get("user_id") == current_user.id
+            and (
+                c.get("saved_filename") == base_name
+                or c.get("filename") == base_name
+                or (c.get("saved_filename") and Path(c.get("saved_filename")).name == base_name)
+                or (c.get("filename") and Path(c.get("filename")).name == base_name)
+            )
+        ]
+        if existing_doc_chunks:
+            return {
+                "status": "success",
+                "filename": original_filename,
+                "saved_filename": base_name,
+                "file_type": EXTENSION_LABELS.get(file_path.suffix.lower(), "DOCUMENT"),
+                "chunks_indexed": len(existing_doc_chunks),
+                "total_indexed_chunks": vector_index.count(user_id=current_user.id),
+                "metadata": {},
+                "reused_index": True,
+            }
+
     try:
         extraction_result = extract_document(file_path, original_filename)
     except ValueError as e:
@@ -707,10 +762,9 @@ async def chat_document_endpoint(
 
     if not _has_chunks(target_name):
         file_to_index = None
-        candidate = settings.upload_dir_path / target_name
-        if candidate.exists() and candidate.is_file():
-            file_to_index = candidate
-        else:
+        try:
+            file_to_index = storage_service.get_file_path(target_name)
+        except Exception:
             base = Path(target_name).name
             matches = list(settings.upload_dir_path.glob(f"*_{base}"))
             if not matches:
@@ -746,9 +800,41 @@ async def chat_document_endpoint(
             detail="An unexpected internal server error occurred during RAG retrieval.",
         )
 
-    # Generate answer via Groq LLM service
+    # Generate answer via LLM service
     try:
         answer_data = generate_rag_answer(question=question, chunks=retrieved_chunks)
+
+        # Multi-stage evidence expansion: if first retrieval result did not contain enough context,
+        # search and re-rank additional candidate evidence before returning an unavailable response.
+        insufficient_markers = [
+            "does not contain sufficient information",
+            "insufficient information to answer",
+            "cannot find sufficient information",
+            "no information is provided",
+            "not mentioned in the provided",
+            "not found in the provided",
+        ]
+        ans_text_lower = (answer_data.get("answer") or "").lower()
+        if any(marker in ans_text_lower for marker in insufficient_markers):
+            total_doc_chunks = len([
+                c for c in vector_index.chunks
+                if (current_user.id is None or c.get("user_id") == current_user.id)
+            ])
+            if total_doc_chunks > len(retrieved_chunks):
+                expanded_top_k = min(12, max(len(retrieved_chunks) + 4, total_doc_chunks))
+                expanded_chunks = retrieve_relevant_chunks(
+                    query=question,
+                    top_k=expanded_top_k,
+                    filename=target_name,
+                    user_id=current_user.id,
+                    index=vector_index,
+                )
+                if len(expanded_chunks) > len(retrieved_chunks):
+                    secondary_answer = generate_rag_answer(question=question, chunks=expanded_chunks)
+                    sec_text_lower = (secondary_answer.get("answer") or "").lower()
+                    if not any(marker in sec_text_lower for marker in insufficient_markers):
+                        answer_data = secondary_answer
+                        retrieved_chunks = expanded_chunks
 
         # Save Chat Messages to DB associated with current_user and document
         if doc_record:
@@ -836,15 +922,19 @@ async def delete_document(
     except Exception as e:
         logger.warning("Error deleting chat messages for document %s: %s", doc_id, e)
 
-    # 3. Delete the uploaded file on disk (without exposing path)
+    # 3. Delete the uploaded file from storage (without exposing path)
     if saved_filename:
         safe_name = Path(saved_filename).name
-        file_path = settings.upload_dir_path / safe_name
-        if file_path.exists() and file_path.is_file():
-            try:
-                file_path.unlink()
-            except Exception as e:
-                logger.warning("Error deleting file %s: %s", safe_name, e)
+        try:
+            storage_service.delete_file(safe_name)
+        except StorageError as e:
+            logger.error("Error deleting file %s from persistent storage: %s", safe_name, e)
+            raise HTTPException(
+                status_code=502,
+                detail="Failed to delete file from persistent storage.",
+            )
+        except Exception as e:
+            logger.warning("Error deleting file %s: %s", safe_name, e)
 
     # 4. Delete the Document record (cascades or deletes saved ai_insights)
     db.delete(doc)

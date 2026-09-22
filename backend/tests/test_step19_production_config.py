@@ -1,9 +1,9 @@
-"""
+﻿"""
 tests/test_step19_production_config.py - Tests for production deployment configuration.
 
 Covers:
-1. PostgreSQL URL normalization ('postgres://' -> 'postgresql://')
-2. Dialect-specific database engine arguments (connection pooling vs sqlite thread check)
+1. PostgreSQL URL normalization ('postgres://' -> 'postgresql://') and rejection of SQLite / unconfigured DB
+2. PostgreSQL database engine connection pooling arguments
 3. Production settings validation (warnings on default JWT secret & SQLite in production)
 4. Public /auth/config endpoint behavior and secret-leak guards
 5. PostgreSQL driver dependency check in requirements.txt
@@ -34,21 +34,23 @@ def test_normalize_database_url():
     assert normalize_database_url("postgres://user:pass@host:5432/db") == "postgresql://user:pass@host:5432/db"
     # Modern standard URLs
     assert normalize_database_url("postgresql://user:pass@host:5432/db") == "postgresql://user:pass@host:5432/db"
-    # SQLite URLs unchanged
-    assert normalize_database_url("sqlite:///./datalens.db") == "sqlite:///./datalens.db"
-    # Null/empty string fallback
-    assert normalize_database_url("") == "sqlite:///./datalens.db"
-    assert normalize_database_url(None) == "sqlite:///./datalens.db"
+    # SQLite URLs rejected
+    with pytest.raises(ValueError) as exc_info:
+        normalize_database_url("sqlite:///./datalens.db")
+    assert "SQLite is not supported" in str(exc_info.value)
+
+    # Null/empty string rejected
+    with pytest.raises(ValueError) as exc_info_empty:
+        normalize_database_url("")
+    assert "must be explicitly configured" in str(exc_info_empty.value)
+
+    with pytest.raises(ValueError) as exc_info_none:
+        normalize_database_url(None)
+    assert "must be explicitly configured" in str(exc_info_none.value)
 
 
 def test_get_engine_args():
-    # SQLite
-    sqlite_args = get_engine_args("sqlite:///./datalens.db")
-    assert "connect_args" in sqlite_args
-    assert sqlite_args["connect_args"]["check_same_thread"] is False
-    assert "pool_pre_ping" not in sqlite_args
-
-    # PostgreSQL
+    # PostgreSQL pooling args
     pg_args = get_engine_args("postgresql://user:pass@host:5432/db")
     assert pg_args.get("pool_pre_ping") is True
     assert pg_args.get("pool_recycle") == 300
@@ -58,28 +60,37 @@ def test_get_engine_args():
 
 
 def test_validate_production_settings_dev_mode():
-    s = Settings(app_env="development", jwt_secret_key=DEFAULT_DEV_JWT_SECRET, database_url="sqlite:///./test.db")
+    s = Settings(
+        app_env="development",
+        jwt_secret_key=DEFAULT_DEV_JWT_SECRET,
+        database_url="postgresql://user:pass@host:5432/test",
+    )
     warnings = s.validate_production_settings()
     assert len(warnings) == 0, "No warnings expected in development environment"
 
 
 def test_validate_production_settings_production_warnings():
-    # Production with defaults triggers warnings
+    # Production with defaults triggers errors
     s = Settings(
         app_env="production",
         jwt_secret_key=DEFAULT_DEV_JWT_SECRET,
-        database_url="sqlite:///./datalens.db"
+        database_url="sqlite:///./datalens.db",
+        supabase_url="",
+        supabase_key="",
     )
     warnings = s.validate_production_settings()
-    assert len(warnings) == 2
     assert any("JWT_SECRET_KEY" in w for w in warnings)
     assert any("DATABASE_URL" in w for w in warnings)
+    assert any("Supabase Storage" in w for w in warnings)
 
-    # Production with secure settings has no warnings
+    # Production with complete secure settings has zero errors/warnings
     s_clean = Settings(
         app_env="production",
         jwt_secret_key="a-very-long-production-grade-secret-key-32-chars!",
-        database_url="postgresql://user:pass@host:5432/db"
+        database_url="postgresql://user:pass@host:5432/db",
+        supabase_url="https://xyzproject.supabase.co",
+        supabase_key="mock-service-role-key-12345",
+        groq_api_key="gsk_mock_production_groq_key_12345",
     )
     assert len(s_clean.validate_production_settings()) == 0
 

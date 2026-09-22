@@ -56,7 +56,14 @@ class TestDocumentSwitchAndPersistence(unittest.TestCase):
         vector_index.clear(user_id=self.user.id)
 
     def tearDown(self):
-        self.db.close()
+        try:
+            self.db.query(ChatMessage).delete()
+            self.db.query(Document).delete()
+            self.db.commit()
+        except Exception:
+            pass
+        finally:
+            self.db.close()
 
     @patch("app.services.llm.Groq")
     def test_switching_documents_preserves_db_history_and_isolates_sources(self, mock_groq_class):

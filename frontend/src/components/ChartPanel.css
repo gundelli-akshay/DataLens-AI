@@ -44,6 +44,7 @@
 .cp-tag--bar     { background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
 .cp-tag--line    { background: rgba(34,197,94,0.12);  color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
 .cp-tag--scatter { background: rgba(167,139,250,0.15); color: #c4b5fd; border: 1px solid rgba(167,139,250,0.3); }
+.cp-tag--histogram { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
 
 /* ── Chart grid ──────────────────────────────────────────────── */
 .cp-grid {

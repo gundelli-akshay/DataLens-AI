@@ -31,13 +31,22 @@ class Settings(BaseSettings):
     upload_dir: str = "data/uploads"
     max_upload_size_mb: int = 20
 
-    # AI / LLM
+    # Persistent Object Storage (Supabase Storage is the exclusive file storage backend)
+    supabase_url: str = ""
+    supabase_key: str = ""  # Service-role or secret key; backend only, never exposed to clients
+    supabase_storage_bucket: str = "datalens-files"
+    storage_backend: str = "supabase"
+
+    # AI / LLM (Primary: Gemini 3.8 Flash, Secondary/Fallback: Groq)
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-20b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
-    # Database
-    database_url: str = "sqlite:///./datalens.db"
+    # Database (PostgreSQL is the exclusive database backend; must be explicitly configured)
+    database_url: str = ""
 
     # Auth & Security
     google_client_id: str = ""
@@ -46,7 +55,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 1440  # 24 hours
 
     # CORS Allowed Origins
-    cors_origins: List[str] = [
+    cors_origins: Union[List[str], str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -72,26 +81,66 @@ class Settings(BaseSettings):
     )
 
     @property
+    def is_gemini_enabled(self) -> bool:
+        return bool(self.gemini_api_key and self.gemini_api_key.strip())
+
+    @property
+    def is_supabase_storage_enabled(self) -> bool:
+        return bool(self.supabase_url and self.supabase_url.strip() and self.supabase_key and self.supabase_key.strip())
+
+    @property
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == "production"
 
-    def validate_production_settings(self) -> List[str]:
+    def validate_production_errors(self) -> List[str]:
         """
-        Return validation warnings for production deployments.
-        Checks for insecure default JWT secrets and ephemeral SQLite database in production.
+        Return fatal configuration errors for production deployments.
+        In production (APP_ENV=production):
+        1. DATABASE_URL must be PostgreSQL (SQLite is not permitted in production).
+        2. Persistent object storage (Supabase Storage) must be configured (local fallback is not permitted).
+        3. JWT_SECRET_KEY must not be the default development secret and must be >= 32 chars.
+        4. CORS_ORIGINS must not contain wildcard '*'.
         """
-        warnings: List[str] = []
+        errors: List[str] = []
         if self.is_production:
+            # 1. Database requirement: PostgreSQL only (SQLite is not permitted)
+            db_clean = (self.database_url or "").strip().lower()
+            if not db_clean or db_clean.startswith("sqlite") or not db_clean.startswith(("postgresql://", "postgres://")):
+                errors.append(
+                    "DATABASE_URL must be configured with a PostgreSQL connection string (SQLite is not permitted)."
+                )
+
+            # 2. Storage requirement: Supabase Storage only (local fallback is not permitted)
+            if not self.is_supabase_storage_enabled:
+                errors.append(
+                    "Persistent object storage (Supabase Storage) must be configured via SUPABASE_URL and SUPABASE_KEY. Local storage fallback is not permitted."
+                )
+
+            # 3. JWT Secret requirement
             if self.jwt_secret_key == DEFAULT_DEV_JWT_SECRET or len(self.jwt_secret_key) < 32:
-                warnings.append(
+                errors.append(
                     "JWT_SECRET_KEY is using an insecure default or is shorter than 32 characters."
                 )
-            if self.database_url.strip().lower().startswith("sqlite"):
-                warnings.append(
-                    "DATABASE_URL is configured with SQLite in production mode. "
-                    "A persistent PostgreSQL database is recommended for production deployment."
+
+            # 4. CORS requirement: No wildcard in production
+            if any(origin == "*" for origin in self.cors_origins):
+                errors.append(
+                    "CORS_ORIGINS contains wildcard '*' which is forbidden in production."
                 )
-        return warnings
+
+        return errors
+
+    def validate_production_settings(self) -> List[str]:
+        """
+        Return all production validation errors and warnings.
+        """
+        messages = self.validate_production_errors()
+        if self.is_production:
+            if not self.groq_api_key or not self.groq_api_key.strip():
+                messages.append(
+                    "GROQ_API_KEY is not set in production mode. AI Insights and Document RAG chat will be unavailable."
+                )
+        return messages
 
     @property
     def upload_dir_path(self) -> Path:

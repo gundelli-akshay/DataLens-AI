@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { chatDocument, indexDocument, getDocumentMessages } from "../services/api";
+import { chatDocument, getDocumentMessages } from "../services/api";
 import MarkdownRenderer from "./MarkdownRenderer";
 import "./DocumentChat.css";
 
@@ -74,14 +74,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-  // Index document in background upon mount/upload if not already done
-  useEffect(() => {
-    if (savedFilename) {
-      indexDocument(savedFilename).catch(() => {
-        // Chat endpoint handles auto-indexing fallback if this fails
-      });
-    }
-  }, [savedFilename]);
+
 
   function toggleSourceSnippet(msgId, sourceIdx) {
     const key = `${msgId}_${sourceIdx}`;
