@@ -1,6 +1,6 @@
 # DataLens AI
 
-> An AI-powered data and document analysis platform for structured datasets (CSV, XLSX) and unstructured documents (PDF, DOCX). Upload files to get instant statistical profiling, interactive charts, automated executive insights, and grounded RAG document chat.
+DataLens AI is a full-stack data and document intelligence platform designed to analyze both structured datasets (CSV, XLSX) and unstructured documents (PDF, DOCX). For structured data, it automatically performs statistical profiling, detects anomalies, and generates responsive visualizations. For documents, it extracts content and enables conversational exploration through grounded retrieval-augmented generation (RAG) with source citations. By combining programmatic analytics with multi-model LLM routing, DataLens AI provides data insights and grounded document answers within a single unified workspace.
 
 ---
 
