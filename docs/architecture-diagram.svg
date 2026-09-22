@@ -54,8 +54,8 @@
   <g transform="translate(250, 168)" filter="url(#cardShadow)">
     <rect width="400" height="78" rx="10" fill="url(#webGrad)" stroke="#a5b4fc" stroke-width="1.5" />
     <text x="200" y="26" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="700">React / Vite SPA + Nginx</text>
-    <text x="200" y="45" text-anchor="middle" fill="#e0e7ff" font-size="11.5">Static UI Assets (Ports 3000 / 5173)</text>
-    <text x="200" y="63" text-anchor="middle" fill="#c7d2fe" font-size="11.5" font-weight="500">API Proxy: /api/*</text>
+    <text x="200" y="45" text-anchor="middle" fill="#e0e7ff" font-size="11.5">Static UI Bundle (SPA)</text>
+    <text x="200" y="63" text-anchor="middle" fill="#c7d2fe" font-size="11.5" font-weight="500">Reverse Proxy (/api/*)</text>
   </g>
 
   <!-- Flow 2: Frontend -> Backend -->
@@ -72,7 +72,7 @@
     <g transform="translate(20, 52)">
       <rect width="160" height="95" rx="8" fill="url(#serviceGrad)" stroke="#475569" stroke-width="1" />
       <text x="80" y="28" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">Authentication</text>
-      <text x="80" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Email &amp; Bcrypt</text>
+      <text x="80" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Email/Password + Bcrypt</text>
       <text x="80" y="68" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Google OAuth 2.0</text>
       <text x="80" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Signed JWT Tokens</text>
     </g>
@@ -92,7 +92,7 @@
       <text x="82" y="28" text-anchor="middle" fill="#f8fafc" font-size="13" font-weight="600">PDF/DOCX + RAG</text>
       <text x="82" y="50" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; PyMuPDF &amp; python-docx</text>
       <text x="82" y="68" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Semantic Chunking</text>
-      <text x="82" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Page-Grounded Q&amp;A</text>
+      <text x="82" y="84" text-anchor="middle" fill="#94a3b8" font-size="11">&#8226; Source-Grounded Q&amp;A</text>
     </g>
 
     <!-- Subsystem 4: AI Routing & Models -->
@@ -133,7 +133,7 @@
   <g transform="translate(130, 610)" filter="url(#cardShadow)">
     <rect width="300" height="90" rx="10" fill="url(#dbGrad)" stroke="#6ee7b7" stroke-width="1.5" />
     <text x="150" y="32" text-anchor="middle" fill="#ffffff" font-size="15" font-weight="700">Supabase PostgreSQL</text>
-    <text x="150" y="54" text-anchor="middle" fill="#ecfdf5" font-size="12">&#8226; Users &amp; Credentials</text>
+    <text x="150" y="54" text-anchor="middle" fill="#ecfdf5" font-size="12">&#8226; Users &amp; Auth Metadata</text>
     <text x="150" y="72" text-anchor="middle" fill="#ecfdf5" font-size="12">&#8226; Documents Metadata &amp; Chat History</text>
   </g>
 
