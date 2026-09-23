@@ -22,7 +22,10 @@ google-genai
 # Document Extraction & RAG
 pymupdf==1.28.2
 python-docx==1.2.0
-sentence-transformers==6.1.0
+# sentence-transformers: disabled in production (torch ~300 MB exceeds Render free tier 512 MB limit).
+# The deterministic CRC32/n-gram fallback in rag.py is used instead.
+# Uncomment for local development with sufficient memory:
+# sentence-transformers==6.1.0
 
 # Added as the project grows
 sqlalchemy==2.0.54

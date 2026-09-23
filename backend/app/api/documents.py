@@ -13,6 +13,7 @@ Protected: All document and chat endpoints require authentication and enforce mu
 """
 
 import anyio
+import gc
 import collections
 import logging
 from pathlib import Path
@@ -630,6 +631,9 @@ async def index_document_endpoint(
             current_user.id,
             vector_index,
         )
+        # Release extraction buffer from memory immediately after indexing
+        del extraction_result
+        gc.collect()
         return index_result
     except Exception as e:
         logger.error("Error indexing document: %s", e, exc_info=True)
@@ -773,6 +777,8 @@ def chat_document_endpoint(
                 extraction_result = extract_document(file_to_index, orig_name)
                 extraction_result["saved_filename"] = file_to_index.name
                 index_document_data(extraction_result, user_id=current_user.id, index=vector_index)
+                del extraction_result
+                gc.collect()
             except Exception:
                 pass
 

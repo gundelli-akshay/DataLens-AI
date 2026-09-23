@@ -40,6 +40,10 @@ def filename_matches(fn1: str | None, fn2: str | None) -> bool:
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 100
+# Maximum number of chunks retained per user in the in-memory vector index.
+# At ~500 chars/chunk this caps per-user memory at roughly 30 MB of text + embeddings.
+# Oldest chunks are evicted when the limit is exceeded.
+MAX_CHUNKS_PER_USER = 600
 
 STOP_WORDS = {
     "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
@@ -431,35 +435,37 @@ def _generate_fast_dense_embedding(text: str, dim: int = 384) -> np.ndarray:
 
 
 class EmbeddingService:
-    """Singleton service for generating dense embeddings via sentence-transformers with memory-safe fallback."""
+    """
+    Embedding service with two modes:
+    - Development: sentence-transformers (all-MiniLM-L6-v2) for high-quality dense embeddings.
+    - Production:  Deterministic CRC32/n-gram hash embedder. Zero torch import, ~0 MB overhead.
+    """
 
     _model = None
     _fallback_active = False
 
     @classmethod
     def get_model(cls, model_name: str = DEFAULT_EMBEDDING_MODEL):
+        from app.core.config import settings
+        # In production, never import torch or sentence-transformers.
+        # torch alone consumes ~300 MB on the Render free tier (512 MB limit).
+        # The deterministic CRC32/n-gram fallback embedder is fully sufficient
+        # for hybrid BM25+dense retrieval on free-tier resources.
+        if settings.is_production:
+            cls._fallback_active = True
+            return None
+
         if cls._model is None and not cls._fallback_active:
             try:
-                import torch
-                import os
+                import os, torch
                 if not os.environ.get("TORCH_NUM_THREADS"):
                     torch.set_num_threads(1)
                 if hasattr(torch, "set_num_interop_threads") and not os.environ.get("TORCH_NUM_INTEROP_THREADS"):
                     torch.set_num_interop_threads(1)
-
                 from sentence_transformers import SentenceTransformer
-                from app.core.config import settings
-                if settings.is_production:
-                    try:
-                        cls._model = SentenceTransformer(model_name, local_files_only=True)
-                    except Exception:
-                        logger.info("SentenceTransformer model weights not pre-cached on disk in production. Using memory-safe deterministic semantic embedding engine.")
-                        cls._fallback_active = True
-                        return None
-                else:
-                    cls._model = SentenceTransformer(model_name)
-            except Exception as e:
-                logger.warning("Could not initialize SentenceTransformer (%s). Using fallback embeddings.", e)
+                cls._model = SentenceTransformer(model_name)
+            except Exception as exc:
+                logger.warning("Could not initialize SentenceTransformer (%s). Using fallback.", exc)
                 cls._fallback_active = True
                 return None
         return cls._model
@@ -490,7 +496,11 @@ class InMemoryVectorIndex:
         self.embeddings: np.ndarray | None = None
 
     def add_documents(self, chunks: list[dict[str, Any]], embeddings: np.ndarray) -> int:
-        """Add chunks and their dense embeddings to the index."""
+        """Add chunks and their dense embeddings to the index.
+        
+        Enforces MAX_CHUNKS_PER_USER per user to prevent unbounded memory growth
+        on memory-constrained deployments (e.g. Render free tier).
+        """
         if len(chunks) == 0:
             return len(self.chunks)
 
@@ -506,6 +516,18 @@ class InMemoryVectorIndex:
             self.embeddings = emb_array
         else:
             self.embeddings = np.vstack([self.embeddings, emb_array])
+
+        # Evict oldest chunks when per-user cap is exceeded
+        user_ids = {c.get("user_id") for c in chunks if c.get("user_id") is not None}
+        for uid in user_ids:
+            user_indices = [i for i, c in enumerate(self.chunks) if c.get("user_id") == uid]
+            if len(user_indices) > MAX_CHUNKS_PER_USER:
+                evict_count = len(user_indices) - MAX_CHUNKS_PER_USER
+                evict_set = set(user_indices[:evict_count])
+                keep = [i for i in range(len(self.chunks)) if i not in evict_set]
+                self.chunks = [self.chunks[i] for i in keep]
+                if self.embeddings is not None and len(self.embeddings) > 0:
+                    self.embeddings = self.embeddings[keep]
 
         return len(self.chunks)
 

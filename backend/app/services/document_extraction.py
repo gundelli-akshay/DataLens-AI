@@ -5,12 +5,14 @@ Provides page-by-page text extraction for PDF files using PyMuPDF
 and paragraph-by-paragraph text extraction for DOCX files using python-docx.
 
 Returns clean extracted text and structured metadata.
+
+Note: pymupdf and docx are imported lazily (inside each function) to avoid
+loading ~80 MB of native libraries at module import time on memory-constrained
+production environments (Render free tier: 512 MB).
 """
 
 from pathlib import Path
 from typing import Any
-import pymupdf
-import docx
 
 
 def _clean_text(text: str) -> str:
@@ -40,6 +42,8 @@ def extract_text_from_pdf(file_path: Path | str, original_filename: str = "") ->
     Raises:
         ValueError if the file cannot be opened or is corrupted.
     """
+    import pymupdf  # lazy import: ~50 MB, only loaded when extracting PDFs
+
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -48,7 +52,7 @@ def extract_text_from_pdf(file_path: Path | str, original_filename: str = "") ->
 
     try:
         doc = pymupdf.open(str(path))
-    except Exception as e:
+    except Exception:
         raise ValueError(f"Unable to read PDF file '{filename}'. The file may be corrupt or not a valid PDF.") from None
 
     try:
@@ -113,6 +117,8 @@ def extract_text_from_docx(file_path: Path | str, original_filename: str = "") -
     Raises:
         ValueError if the file cannot be opened or is corrupted.
     """
+    import docx as python_docx  # lazy import: ~30 MB, only loaded when extracting DOCX files
+
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -120,8 +126,8 @@ def extract_text_from_docx(file_path: Path | str, original_filename: str = "") -
     filename = original_filename or path.name
 
     try:
-        doc = docx.Document(str(path))
-    except Exception as e:
+        doc = python_docx.Document(str(path))
+    except Exception:
         raise ValueError(f"Unable to read DOCX file '{filename}'. The file may be corrupt or not a valid Word document.") from None
 
     paragraphs: list[dict[str, Any]] = []

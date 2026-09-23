@@ -12,6 +12,7 @@ Design notes:
   so the router can raise an appropriate HTTPException.
 """
 
+import gc
 import math
 import re
 import warnings
@@ -616,7 +617,10 @@ def analyze_csv(file_path: Path, original_filename: str) -> dict:
             "message": "The CSV file is empty or contains no readable rows.",
         }
 
-    return analyze_dataframe(df, original_filename, "CSV")
+    result = analyze_dataframe(df, original_filename, "CSV")
+    del df
+    gc.collect()
+    return result
 
 
 def analyze_xlsx(file_path: Path, original_filename: str) -> dict:
@@ -624,11 +628,12 @@ def analyze_xlsx(file_path: Path, original_filename: str) -> dict:
     Read the first sheet of an XLSX workbook and return analysis.
     The sheet name is included in the result for transparency.
     """
+    sheet_name = ""
     try:
-        xl = pd.ExcelFile(file_path, engine="openpyxl")
-        sheet_name = xl.sheet_names[0]
-        df = xl.parse(sheet_name)
-    except Exception as exc:
+        with pd.ExcelFile(file_path, engine="openpyxl") as xl:
+            sheet_name = xl.sheet_names[0]
+            df = xl.parse(sheet_name)
+    except Exception:
         return {"status": "error", "message": f"Could not read XLSX file '{original_filename}'. The file format may be invalid or corrupt."}
 
     if df.empty:
@@ -639,4 +644,6 @@ def analyze_xlsx(file_path: Path, original_filename: str) -> dict:
 
     result = analyze_dataframe(df, original_filename, "XLSX")
     result["sheet_name"] = sheet_name   # add XLSX-specific metadata
+    del df
+    gc.collect()
     return result
