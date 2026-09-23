@@ -536,6 +536,7 @@ async def extract_document_endpoint(
                 pass
 
 
+@router.post("/index/", include_in_schema=False)
 @router.post("/index")
 async def index_document_endpoint(
     request: Request,

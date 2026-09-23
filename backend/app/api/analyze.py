@@ -42,6 +42,7 @@ class AnalyzeRequest(BaseModel):
 
 
 # -- Router ------------------------------------------------------
+@router.post("", include_in_schema=False)
 @router.post("/")
 def analyze_file(
     request: AnalyzeRequest,

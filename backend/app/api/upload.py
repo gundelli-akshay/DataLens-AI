@@ -79,6 +79,7 @@ def _human_size(n: int) -> str:
     return f"{n / 1_024 ** 2:.2f} MB"
 
 
+@router.post("", include_in_schema=False)
 @router.post("/")
 async def upload_file(
     file: UploadFile = File(...),

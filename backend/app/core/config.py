@@ -56,6 +56,7 @@ class Settings(BaseSettings):
 
     # CORS Allowed Origins
     cors_origins: Union[List[str], str] = [
+        "https://data-lens-ai-beta.vercel.app",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
@@ -78,10 +79,30 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
+            origins = [
+                origin.strip().strip("\"'").rstrip("/")
+                for origin in v.split(",")
+                if origin.strip()
+            ]
         elif isinstance(v, list):
-            return v
-        return ["http://localhost:5173", "http://127.0.0.1:5173"]
+            origins = [
+                str(origin).strip().strip("\"'").rstrip("/")
+                for origin in v
+                if str(origin).strip()
+            ]
+        else:
+            origins = [
+                "https://data-lens-ai-beta.vercel.app",
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+            ]
+
+        # Always ensure production Vercel frontend is included if not already present
+        prod_origin = "https://data-lens-ai-beta.vercel.app"
+        if prod_origin not in origins and "*" not in origins:
+            origins.append(prod_origin)
+
+        return origins
 
     model_config = SettingsConfigDict(
         env_file=str(Path(__file__).resolve().parent.parent.parent / ".env"),

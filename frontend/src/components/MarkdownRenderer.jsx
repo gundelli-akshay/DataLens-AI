@@ -117,6 +117,18 @@ export default function MarkdownRenderer({ content, className = "" }) {
     }
 
     // ── Headings ──────────────────────────────────────────────────
+    // Standalone bold line acting as section heading (e.g. **Executive Summary**)
+    if (/^\*\*[A-Za-z0-9\s&\-.,:]{3,60}\*\*$/.test(trimmed)) {
+      const headingText = trimmed.replace(/^\*\*/, '').replace(/\*\*$/, '').replace(/:$/, '').trim();
+      blocks.push(
+        <h4 key={`bh-${blocks.length}`} className="ai-md-h3">
+          {renderInline(headingText)}
+        </h4>
+      );
+      i++;
+      continue;
+    }
+
     if (trimmed.startsWith("#### ")) {
       blocks.push(
         <h5 key={`h4-${blocks.length}`} className="ai-md-h4">

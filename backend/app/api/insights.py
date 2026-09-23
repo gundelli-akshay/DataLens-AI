@@ -43,6 +43,7 @@ class InsightsRequest(BaseModel):
     analysis: dict[str, Any] | None = None
 
 
+@router.post("", include_in_schema=False)
 @router.post("/")
 def get_insights(
     request: InsightsRequest,

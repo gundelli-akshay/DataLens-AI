@@ -34,20 +34,20 @@ export default function UserMenuModal({
   user,
   onClose,
   onSelectDocument,
+  onDeleteDocument,
   onSignOut,
 }) {
   const [activeTab, setActiveTab] = useState(initialTab === "documents" ? "history" : initialTab);
   const [historyList, setHistoryList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [deletingId, setDeletingId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
     if (isOpen) {
       setActiveTab(initialTab === "documents" ? "history" : initialTab);
       setError("");
-      setConfirmDeleteId(null);
+      setDeleteTarget(null);
     }
   }, [isOpen, initialTab]);
 
@@ -92,7 +92,7 @@ export default function UserMenuModal({
 
   async function handleConfirmDelete() {
     if (!deleteTarget) return;
-    const docId = deleteTarget.id || deleteTarget.document_id;
+    const docId = deleteTarget.id || deleteTarget.document_id || deleteTarget.saved_filename;
     try {
       await deleteDocument(docId);
       setHistoryList((prev) =>
@@ -227,8 +227,6 @@ export default function UserMenuModal({
                     const docName = item.original_filename || item.saved_filename || "Document";
                     const isTabular = ["CSV", "XLSX"].includes(fileType);
                     const qCount = item.chat_count || item.total_messages || 0;
-                    const isConfirming = confirmDeleteId === docId;
-                    const isThisDeleting = deletingId === docId;
 
                     return (
                       <div key={docId} className="user-modal__history-item">
@@ -312,44 +310,22 @@ export default function UserMenuModal({
                           )}
 
                           <div className="user-modal__actions-wrap">
-                            {/* Delete Button with Confirmation */}
-                            {isConfirming ? (
-                              <div className="user-modal__confirm-box" role="alertdialog" aria-label="Confirm permanent deletion">
-                                <span className="user-modal__confirm-text">Delete permanently?</span>
-                                <button
-                                  type="button"
-                                  className="user-modal__confirm-btn user-modal__confirm-btn--delete"
-                                  onClick={() => handleDelete(docId)}
-                                  disabled={isThisDeleting}
-                                >
-                                  {isThisDeleting ? "Deleting..." : "Yes, Delete"}
-                                </button>
-                                <button
-                                  type="button"
-                                  className="user-modal__confirm-btn user-modal__confirm-btn--cancel"
-                                  onClick={() => setConfirmDeleteId(null)}
-                                  disabled={isThisDeleting}
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                className="user-modal__delete-btn"
-                                title="Delete this document and all associated data"
-                                aria-label={`Delete ${docName}`}
-                                onClick={() => setConfirmDeleteId(docId)}
-                              >
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            {/* Delete Button triggering DeleteConfirmModal */}
+                            <button
+                              type="button"
+                              className="user-modal__delete-btn"
+                              title="Delete this document and all associated data"
+                              aria-label={`Delete ${docName}`}
+                              onClick={() => setDeleteTarget(item)}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                   <polyline points="3 6 5 6 21 6" />
                                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                                   <line x1="10" y1="11" x2="10" y2="17" />
                                   <line x1="14" y1="11" x2="14" y2="17" />
-                                </svg>
-                                Delete
-                              </button>
-                            )}
+                              </svg>
+                              Delete
+                            </button>
 
                             {/* Open Action */}
                             <button
@@ -397,7 +373,7 @@ export default function UserMenuModal({
             ? "This analysis will be permanently removed."
             : "This will permanently remove the file and its associated analysis."
         }
-        itemName={deleteTarget?.original_filename || deleteTarget?.filename || deleteTarget?.document_name}
+        itemName={deleteTarget?.original_filename || deleteTarget?.saved_filename || deleteTarget?.filename || deleteTarget?.document_name}
         confirmLabel="Delete"
         onClose={() => setDeleteTarget(null)}
         onConfirm={handleConfirmDelete}

@@ -22,7 +22,21 @@
 
 .markdown-content .ai-md-h1 { font-size: 1.15rem; }
 .markdown-content .ai-md-h2 { font-size: 1.02rem; color: #38bdf8; border-bottom: 1px solid #1e293b; padding-bottom: 0.25rem; }
-.markdown-content .ai-md-h3 { font-size: 0.925rem; color: #f1f5f9; }
+.markdown-content .ai-md-h3 {
+  font-size: 0.92rem;
+  color: #38bdf8;
+  margin: 1.25rem 0 0.45rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.markdown-content .ai-md-h3:first-child {
+  margin-top: 0.15rem;
+}
 .markdown-content .ai-md-h4 { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
 
 .markdown-content .ai-md-p {
