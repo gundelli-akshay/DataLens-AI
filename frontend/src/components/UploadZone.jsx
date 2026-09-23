@@ -2,19 +2,10 @@ import { useRef, useState } from "react";
 import { uploadFile } from "../services/api";
 import "./UploadZone.css";
 
-// Constants
 const ALLOWED_EXTENSIONS = [".csv", ".xlsx", ".pdf", ".docx"];
 const MAX_SIZE_MB = 20;
 const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
-const FORMAT_META = {
-  ".csv":  { label: "CSV",  color: "#34d399" },
-  ".xlsx": { label: "XLSX", color: "#60a5fa" },
-  ".pdf":  { label: "PDF",  color: "#f87171" },
-  ".docx": { label: "DOCX", color: "#a78bfa" },
-};
-
-// Helper
 function getExtension(filename) {
   return ("." + filename.split(".").pop()).toLowerCase();
 }
@@ -25,15 +16,13 @@ function humanSize(bytes) {
   return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
 }
 
-// Component
 export default function UploadZone({ user, onRequireAuth, onUploadSuccess, onReset }) {
-  const [state, setState] = useState("idle");   // idle | dragover | uploading | success | error
+  const [state, setState] = useState("idle"); // idle | dragover | uploading | success | error
   const [dragOver, setDragOver] = useState(false);
-  const [result, setResult] = useState(null);   // server response on success
-  const [error, setError] = useState("");        // error message
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
   const inputRef = useRef(null);
 
-  // Client-side validation
   function validateFile(file) {
     const ext = getExtension(file.name);
     if (!ALLOWED_EXTENSIONS.includes(ext)) {
@@ -43,12 +32,11 @@ export default function UploadZone({ user, onRequireAuth, onUploadSuccess, onRes
       return "The selected file is empty. Please choose a valid file.";
     }
     if (file.size > MAX_SIZE_BYTES) {
-      return `File is too large (${humanSize(file.size)}). Maximum allowed size is ${MAX_SIZE_MB} MB.`;
+      return `File exceeds maximum allowed size (${humanSize(file.size)}). Limit is ${MAX_SIZE_MB} MB.`;
     }
-    return null; // valid
+    return null;
   }
 
-  // Upload handler
   async function handleFile(file) {
     if (!user) {
       if (onRequireAuth) onRequireAuth();
@@ -62,7 +50,6 @@ export default function UploadZone({ user, onRequireAuth, onUploadSuccess, onRes
       return;
     }
 
-    // Clear previous document/chat state when starting a new upload
     if (onReset) onReset();
 
     setState("uploading");
@@ -73,15 +60,53 @@ export default function UploadZone({ user, onRequireAuth, onUploadSuccess, onRes
       const data = await uploadFile(file);
       setResult(data);
       setState("success");
-      if (onUploadSuccess) onUploadSuccess(data);
+      if (onUploadSuccess) {
+        onUploadSuccess(data);
+      }
     } catch (err) {
       setState("error");
-      setError(err.message || "Upload failed. Please try again.");
+      setError(err.message || "An unexpected error occurred during upload. Please try again.");
     }
   }
 
-  // Droparea click handler
-  function handleDropAreaClick() {
+  function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragOver) setDragOver(true);
+  }
+
+  function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget)) return;
+    setDragOver(false);
+  }
+
+  function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOver(false);
+
+    if (!user) {
+      if (onRequireAuth) onRequireAuth();
+      return;
+    }
+
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      handleFile(files[0]);
+    }
+  }
+
+  function handleInputChange(e) {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFile(files[0]);
+    }
+    e.target.value = "";
+  }
+
+  function handleClick() {
     if (!user) {
       if (onRequireAuth) onRequireAuth();
       return;
@@ -89,212 +114,161 @@ export default function UploadZone({ user, onRequireAuth, onUploadSuccess, onRes
     inputRef.current?.click();
   }
 
-  // Drag events
-  function onDragOver(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
-  }
-
-  function onDragLeave(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-  }
-
-  function onDrop(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    if (!user) {
-      if (onRequireAuth) onRequireAuth();
-      return;
-    }
-    const file = e.dataTransfer.files?.[0];
-    if (file) handleFile(file);
-  }
-
-  // File input change
-  function onInputChange(e) {
-    if (!user) {
-      if (onRequireAuth) onRequireAuth();
-      e.target.value = "";
-      return;
-    }
-    const file = e.target.files?.[0];
-    if (file) handleFile(file);
-    // Reset input so the same file can be re-selected
-    e.target.value = "";
-  }
-
-  function reset() {
+  function handleReset() {
     setState("idle");
-    setError("");
     setResult(null);
+    setError("");
     if (onReset) onReset();
   }
 
-  // Render
   return (
-    <section className="upload-zone" aria-label="File upload area">
-      {/* Idle / Drag-over state */}
+    <div className="upload-zone" aria-label="File upload section">
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".csv,.xlsx,.pdf,.docx"
+        onChange={handleInputChange}
+        className="upload-zone__input"
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
+      {/* State: IDLE / DRAGOVER */}
       {(state === "idle" || state === "dragover") && (
-        <>
-          <div
-            className={`upload-zone__droparea${dragOver ? " upload-zone__droparea--active" : ""}${!user ? " upload-zone__droparea--unauth" : ""}`}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
-            onClick={handleDropAreaClick}
-            role="button"
-            tabIndex={0}
-            aria-label={user ? "Drop a file here or click to browse" : "Sign in to upload and analyze files"}
-            onKeyDown={(e) => e.key === "Enter" && handleDropAreaClick()}
-          >
-            <div className="upload-zone__icon" aria-hidden="true">
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="24" fill={dragOver ? "rgba(99,102,241,0.2)" : "rgba(99,102,241,0.1)"} />
-                <path
-                  d="M24 32V20M24 20L19 25M24 20L29 25"
-                  stroke={dragOver ? "#a5b4fc" : "#818cf8"}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <path
-                  d="M16 33h16"
-                  stroke={dragOver ? "#a5b4fc" : "#818cf8"}
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  opacity="0.5"
-                />
-              </svg>
-            </div>
-
-            <div className="upload-zone__text">
-              <p className="upload-zone__primary">
-                {!user
-                  ? "Sign in to upload & analyze files"
-                  : dragOver
-                  ? "Release to upload"
-                  : "Drop your file here"}
-              </p>
-              <p className="upload-zone__secondary">
-                {!user ? (
-                  <>or <span className="upload-zone__browse">click here to sign in</span></>
-                ) : dragOver ? (
-                  ""
-                ) : (
-                  <>or <span className="upload-zone__browse">browse to upload</span></>
-                )}
-              </p>
-            </div>
-
-            {user && (
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".csv,.xlsx,.pdf,.docx"
-                onChange={onInputChange}
-                className="upload-zone__input"
-                aria-hidden="true"
-                tabIndex={-1}
-              />
-            )}
+        <div
+          className={`upload-zone__droparea ${dragOver ? "upload-zone__droparea--active" : ""}`}
+          onClick={handleClick}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          role="button"
+          tabIndex={0}
+          aria-label="Upload file by dropping or browsing"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleClick();
+            }
+          }}
+        >
+          <div className="upload-zone__icon-box" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
           </div>
 
-          {/* Format badges */}
-          <div className="upload-zone__formats" role="list" aria-label="Supported file formats">
-            {Object.entries(FORMAT_META).map(([ext, { label, color }]) => (
-              <div
-                key={ext}
-                className="format-badge"
-                role="listitem"
-                style={{ "--badge-color": color }}
-              >
-                <span className="format-badge__dot" aria-hidden="true" />
-                <span className="format-badge__ext">{label}</span>
-              </div>
-            ))}
+          <div className="upload-zone__copy">
+            <p className="upload-zone__headline">
+              Drag and drop your file here, or{" "}
+              <span className="upload-zone__browse-action">browse from device</span>
+            </p>
+            <p className="upload-zone__subline">
+              Spreadsheets or reference documents up to 20 MB
+            </p>
           </div>
-          <p className="upload-zone__limit">Max file size: {MAX_SIZE_MB} MB</p>
-        </>
+
+          <div className="upload-zone__formats-bar" aria-label="Supported file categories">
+            <div className="upload-zone__format-group">
+              <span className="upload-zone__format-label">Datasets</span>
+              <span className="upload-zone__format-pill upload-zone__format-pill--tabular">CSV</span>
+              <span className="upload-zone__format-pill upload-zone__format-pill--tabular">XLSX</span>
+            </div>
+            <span className="upload-zone__formats-divider" aria-hidden="true">&middot;</span>
+            <div className="upload-zone__format-group">
+              <span className="upload-zone__format-label">Documents</span>
+              <span className="upload-zone__format-pill upload-zone__format-pill--doc">PDF</span>
+              <span className="upload-zone__format-pill upload-zone__format-pill--doc">DOCX</span>
+            </div>
+          </div>
+        </div>
       )}
 
-      {/* Uploading state */}
+      {/* State: UPLOADING */}
       {state === "uploading" && (
-        <div className="upload-state upload-state--uploading" role="status" aria-live="polite">
-          <div className="upload-spinner" aria-hidden="true">
-            <svg viewBox="0 0 50 50" width="48" height="48">
-              <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(99,102,241,0.2)" strokeWidth="4" />
+        <div className="upload-zone__status upload-zone__status--uploading" role="status" aria-live="polite">
+          <div className="upload-zone__spinner" aria-hidden="true">
+            <svg viewBox="0 0 50 50" width="36" height="36">
               <circle
-                cx="25" cy="25" r="20" fill="none"
-                stroke="#818cf8" strokeWidth="4"
+                cx="25"
+                cy="25"
+                r="20"
+                fill="none"
+                stroke="rgba(2, 132, 199, 0.2)"
+                strokeWidth="3.5"
+              />
+              <circle
+                cx="25"
+                cy="25"
+                r="20"
+                fill="none"
+                stroke="#0284c7"
+                strokeWidth="3.5"
                 strokeDasharray="80 45"
                 strokeLinecap="round"
               />
             </svg>
           </div>
-          <p className="upload-state__title">Uploading...</p>
-          <p className="upload-state__sub">Please wait</p>
+          <p className="upload-zone__status-title">Processing file</p>
+          <p className="upload-zone__status-desc">Parsing contents and validating data schema...</p>
         </div>
       )}
 
-      {/* Success state */}
+      {/* State: SUCCESS */}
       {state === "success" && result && (
-        <div className="upload-state upload-state--success" role="status" aria-live="polite">
-          <div className="upload-state__icon upload-state__icon--success" aria-hidden="true">
-            <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
-              <circle cx="24" cy="24" r="24" fill="rgba(34,197,94,0.15)" />
-              <path d="M15 24l7 7 12-13" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <p className="upload-state__title">Upload successful!</p>
-
-          <div className="upload-result">
-            <div className="upload-result__row">
-              <span className="upload-result__key">File</span>
-              <span className="upload-result__val upload-result__filename" title={result.original_filename}>
+        <div className="upload-zone__status upload-zone__status--success" role="status" aria-live="polite">
+          <div className="upload-zone__file-card">
+            <div className="upload-zone__file-icon" aria-hidden="true">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+            </div>
+            <div className="upload-zone__file-details">
+              <span className="upload-zone__file-name" title={result.original_filename}>
                 {result.original_filename}
               </span>
+              <div className="upload-zone__file-meta">
+                <span className="upload-zone__file-badge">{result.file_type}</span>
+                <span className="upload-zone__file-size">{humanSize(result.file_size_bytes)}</span>
+              </div>
             </div>
-            <div className="upload-result__row">
-              <span className="upload-result__key">Type</span>
-              <span
-                className="upload-result__val upload-result__type"
-                style={{ "--type-color": FORMAT_META[`.${result.file_type.toLowerCase()}`]?.color || "#818cf8" }}
-              >
-                {result.file_type}
-              </span>
-            </div>
-            <div className="upload-result__row">
-              <span className="upload-result__key">Size</span>
-              <span className="upload-result__val">{result.file_size_display}</span>
-            </div>
+            <button
+              type="button"
+              className="upload-zone__replace-btn"
+              onClick={handleReset}
+              aria-label="Upload a different file"
+            >
+              Replace File
+            </button>
           </div>
-
-          <button className="upload-btn upload-btn--reset" onClick={reset} type="button">
-            Upload another file
-          </button>
         </div>
       )}
 
-      {/* Error state */}
+      {/* State: ERROR */}
       {state === "error" && (
-        <div className="upload-state upload-state--error" role="alert" aria-live="assertive">
-          <div className="upload-state__icon upload-state__icon--error" aria-hidden="true">
-            <svg viewBox="0 0 48 48" width="48" height="48" fill="none">
-              <circle cx="24" cy="24" r="24" fill="rgba(239,68,68,0.15)" />
-              <path d="M17 17l14 14M31 17L17 31" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" />
+        <div className="upload-zone__status upload-zone__status--error" role="alert">
+          <div className="upload-zone__error-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
             </svg>
           </div>
-          <p className="upload-state__title">Upload failed</p>
-          <p className="upload-state__message">{error}</p>
-          <button className="upload-btn upload-btn--reset" onClick={reset} type="button">
-            Try again
+          <div className="upload-zone__error-text">
+            <p className="upload-zone__status-title">Upload Failed</p>
+            <p className="upload-zone__status-desc">{error}</p>
+          </div>
+          <button
+            type="button"
+            className="upload-zone__replace-btn"
+            onClick={handleReset}
+          >
+            Try Again
           </button>
         </div>
       )}
-    </section>
+    </div>
   );
 }

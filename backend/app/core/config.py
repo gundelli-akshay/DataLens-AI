@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-20b"
-    groq_base_url: str = "https://api.groq.com/openai/v1"
+    groq_base_url: str = "https://api.groq.com"
 
     # Database (PostgreSQL is the exclusive database backend; must be explicitly configured)
     database_url: str = ""
@@ -63,6 +63,16 @@ class Settings(BaseSettings):
         "http://localhost:8000",
         "http://127.0.0.1:8000",
     ]
+
+    @field_validator("groq_base_url", mode="before")
+    @classmethod
+    def normalize_groq_base_url(cls, v: Union[str, None]) -> str:
+        if not v or not isinstance(v, str):
+            return "https://api.groq.com"
+        clean = v.strip().rstrip("/")
+        if clean.endswith("/openai/v1"):
+            clean = clean[:-len("/openai/v1")]
+        return clean or "https://api.groq.com"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

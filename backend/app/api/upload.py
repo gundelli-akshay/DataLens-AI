@@ -155,9 +155,18 @@ async def upload_file(
             file_type=EXTENSION_LABELS[suffix],
             file_size_bytes=len(content),
         )
-        db.add(doc_record)
-        db.commit()
-        db.refresh(doc_record)
+        try:
+            db.add(doc_record)
+            db.commit()
+            db.refresh(doc_record)
+        except Exception as db_exc:
+            db.rollback()
+            logger.error("Database insert failed for uploaded file '%s': %s. Performing compensating storage cleanup.", saved_name, db_exc)
+            try:
+                storage_service.delete_file(saved_name)
+            except Exception as del_exc:
+                logger.warning("Failed to delete storage file '%s' during compensation: %s", saved_name, del_exc)
+            raise db_exc
 
     # -- 6. Return metadata (no local paths) --------------------
     return {

@@ -38,7 +38,7 @@
   </defs>
 
   <!-- Title -->
-  <text x="450" y="42" text-anchor="middle" fill="#f8fafc" font-size="22" font-weight="700" letter-spacing="0.5">DataLens AI &#8212; High-Level Architecture</text>
+  <text x="450" y="42" text-anchor="middle" fill="#f8fafc" font-size="22" font-weight="700" letter-spacing="0.5">DataLens AI: High-Level Architecture</text>
 
   <!-- Layer 1: User Browser -->
   <g transform="translate(325, 70)" filter="url(#cardShadow)">

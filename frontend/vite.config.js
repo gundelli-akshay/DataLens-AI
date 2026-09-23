@@ -9,9 +9,9 @@ export default defineConfig({
     proxy: {
       // Proxy /api/* → FastAPI backend
       // This means components call fetch("/api/health")
-      // instead of hardcoding http://localhost:8000/health
+      // instead of hardcoding http://127.0.0.1:8000/health
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },

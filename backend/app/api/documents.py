@@ -12,6 +12,7 @@ Endpoints:
 Protected: All document and chat endpoints require authentication and enforce multi-tenant isolation.
 """
 
+import anyio
 import collections
 import logging
 from pathlib import Path
@@ -36,6 +37,7 @@ from app.services.document_extraction import (
 )
 from app.services.llm import generate_rag_answer
 from app.services.rag import (
+    filename_matches,
     DEFAULT_CHUNK_OVERLAP,
     DEFAULT_CHUNK_SIZE,
     index_document_data,
@@ -590,13 +592,8 @@ async def index_document_endpoint(
         base_name = file_path.name
         existing_doc_chunks = [
             c for c in vector_index.chunks
-            if c.get("user_id") == current_user.id
-            and (
-                c.get("saved_filename") == base_name
-                or c.get("filename") == base_name
-                or (c.get("saved_filename") and Path(c.get("saved_filename")).name == base_name)
-                or (c.get("filename") and Path(c.get("filename")).name == base_name)
-            )
+            if (current_user.id is None or c.get("user_id") == current_user.id)
+            and (filename_matches(c.get("saved_filename"), base_name) or filename_matches(c.get("filename"), base_name))
         ]
         if existing_doc_chunks:
             return {
@@ -611,7 +608,7 @@ async def index_document_endpoint(
             }
 
     try:
-        extraction_result = extract_document(file_path, original_filename)
+        extraction_result = await anyio.to_thread.run_sync(extract_document, file_path, original_filename)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -624,12 +621,13 @@ async def index_document_endpoint(
     extraction_result["saved_filename"] = file_path.name
 
     try:
-        index_result = index_document_data(
+        index_result = await anyio.to_thread.run_sync(
+            index_document_data,
             extraction_result,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            user_id=current_user.id,
-            index=vector_index,
+            chunk_size,
+            chunk_overlap,
+            current_user.id,
+            vector_index,
         )
         return index_result
     except Exception as e:
@@ -706,7 +704,7 @@ async def clear_index_endpoint(
 
 
 @router.post("/chat")
-async def chat_document_endpoint(
+def chat_document_endpoint(
     payload: DocumentChatRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -745,18 +743,11 @@ async def chat_document_endpoint(
 
     # If no chunks match target_name for current user in vector_index, check if file exists on disk to auto-index
     def _has_chunks(fn: str) -> bool:
-        base = Path(fn).name
         for c in vector_index.chunks:
             c_uid = c.get("user_id")
-            if c_uid is not None and c_uid != current_user.id:
+            if current_user.id is not None and c_uid != current_user.id:
                 continue
-            c_fn = c.get("filename")
-            c_sfn = c.get("saved_filename")
-            if c_fn == fn or c_sfn == fn:
-                return True
-            if c_fn and (Path(c_fn).name == base or Path(c_fn).name.endswith(f"_{base}")):
-                return True
-            if c_sfn and (Path(c_sfn).name == base or Path(c_sfn).name.endswith(f"_{base}")):
+            if filename_matches(c.get("filename"), fn) or filename_matches(c.get("saved_filename"), fn):
                 return True
         return False
 

@@ -98,9 +98,14 @@ export default function MarkdownRenderer({ content, className = "" }) {
               <tbody>
                 {dataRows.map((row, rIdx) => (
                   <tr key={rIdx}>
-                    {row.map((cell, cIdx) => (
-                      <td key={cIdx}>{renderInline(cell)}</td>
-                    ))}
+                    {row.map((cell, cIdx) => {
+                      const isCitationCell = /^(?:\(?(?:Page|Paragraph)\s+\d+(?:-\d+)?\)?)$/i.test(cell.trim());
+                      return (
+                        <td key={cIdx} className={isCitationCell ? "ai-citation-td" : ""}>
+                          {renderInline(cell)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>

@@ -1,27 +1,29 @@
-/* ── Reusable Markdown Styling ─────────────────────────────────────── */
+/* MarkdownRenderer.css - Clean, readable typography without purple or glassmorphism */
+
 .markdown-content {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   line-height: 1.6;
   width: 100%;
+  color: #cbd5e1;
 }
 
 .markdown-content .ai-md-h1,
 .markdown-content .ai-md-h2,
 .markdown-content .ai-md-h3,
 .markdown-content .ai-md-h4 {
-  margin: 0.75rem 0 0.2rem;
+  margin: 0.65rem 0 0.2rem;
   color: #f8fafc;
-  font-weight: 700;
-  letter-spacing: -0.2px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
-.markdown-content .ai-md-h1 { font-size: 1.25rem; color: #818cf8; }
-.markdown-content .ai-md-h2 { font-size: 1.1rem; color: #a5b4fc; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 0.3rem; }
-.markdown-content .ai-md-h3 { font-size: 0.98rem; color: #cbd5e1; }
-.markdown-content .ai-md-h4 { font-size: 0.9rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.4px; }
+.markdown-content .ai-md-h1 { font-size: 1.15rem; }
+.markdown-content .ai-md-h2 { font-size: 1.02rem; color: #38bdf8; border-bottom: 1px solid #1e293b; padding-bottom: 0.25rem; }
+.markdown-content .ai-md-h3 { font-size: 0.925rem; color: #f1f5f9; }
+.markdown-content .ai-md-h4 { font-size: 0.85rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.04em; }
 
 .markdown-content .ai-md-p {
   margin: 0;
@@ -30,11 +32,11 @@
 
 .markdown-content .ai-md-ul,
 .markdown-content .ai-md-ol {
-  margin: 0.15rem 0 0.4rem 1.2rem;
+  margin: 0.15rem 0 0.35rem 1.25rem;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.3rem;
 }
 
 .markdown-content .ai-md-li {
@@ -42,11 +44,11 @@
 }
 
 .markdown-content .ai-md-quote {
-  margin: 0.4rem 0;
-  padding: 0.5rem 0.9rem;
-  background: rgba(99, 102, 241, 0.05);
-  border-left: 3px solid #818cf8;
-  border-radius: 0 6px 6px 0;
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.85rem;
+  background: #090d16;
+  border-left: 2px solid #334155;
+  border-radius: 0 4px 4px 0;
   color: #94a3b8;
   font-style: italic;
 }
@@ -57,58 +59,93 @@
 
 .markdown-content .ai-md-divider {
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  margin: 0.75rem 0;
+  border-top: 1px solid #1e293b;
+  margin: 0.65rem 0;
 }
 
 .markdown-content .ai-md-codeblock {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
+  background: #090d16;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 0.65rem 0.85rem;
   overflow-x: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.82rem;
-  color: #e2e8f0;
-  margin: 0.4rem 0;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  color: #f1f5f9;
+  margin: 0.35rem 0;
 }
 
-/* ── Markdown Table Styling ───────────────────────────────────────── */
+/* Markdown Table */
 .markdown-content .ai-table-container {
   overflow-x: auto;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(15, 23, 42, 0.5);
-  margin: 0.4rem 0 0.8rem;
+  border-radius: 6px;
+  border: 1px solid #1e293b;
+  background: #090d16;
+  margin: 0.35rem 0 0.65rem;
   max-width: 100%;
 }
 
 .markdown-content .ai-markdown-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   text-align: left;
 }
 
 .markdown-content .ai-markdown-table th {
-  background: rgba(99, 102, 241, 0.15);
-  color: #f1f5f9;
+  background: #090d16;
+  color: #64748b;
+  font-size: 0.72rem;
   font-weight: 600;
-  padding: 0.55rem 0.85rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid #1e293b;
   white-space: nowrap;
 }
 
 .markdown-content .ai-markdown-table td {
-  padding: 0.5rem 0.85rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid #1e293b;
   color: #cbd5e1;
 }
 
 .markdown-content .ai-markdown-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: #0f172a;
 }
 
 .markdown-content .ai-markdown-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Inline Citations & Table Citations - Non-breaking layout */
+.ai-citation-inline {
+  white-space: nowrap;
+  display: inline-block;
+  font-weight: 500;
+  color: #38bdf8;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.85em;
+  background: #1e293b;
+  border: 1px solid #334155;
+  padding: 0.08rem 0.4rem;
+  border-radius: 4px;
+  vertical-align: baseline;
+}
+
+.markdown-content .ai-markdown-table {
+  table-layout: auto;
+}
+
+.markdown-content .ai-markdown-table th,
+.markdown-content .ai-markdown-table td {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
+.markdown-content .ai-markdown-table td.ai-citation-td,
+.markdown-content .ai-markdown-table th:last-child:has(+ :empty),
+.markdown-content .ai-markdown-table td:last-child:has(+ :empty) {
+  white-space: nowrap;
+  min-width: 85px;
 }

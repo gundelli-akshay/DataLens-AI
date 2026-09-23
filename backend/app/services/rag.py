@@ -19,6 +19,24 @@ from typing import Any
 from collections import Counter
 import numpy as np
 
+def filename_matches(fn1: str | None, fn2: str | None) -> bool:
+    """Robust matching between original filenames, saved filenames, and UUID prefixes."""
+    if not fn1 or not fn2:
+        return False
+    if fn1 == fn2:
+        return True
+    b1 = Path(fn1).name
+    b2 = Path(fn2).name
+    if b1 == b2:
+        return True
+    c1 = re.sub(r"^[0-9a-f]{32}_", "", b1)
+    c2 = re.sub(r"^[0-9a-f]{32}_", "", b2)
+    if c1 == c2:
+        return True
+    if b1.endswith(f"_{b2}") or b2.endswith(f"_{b1}"):
+        return True
+    return False
+
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_CHUNK_SIZE = 500
 DEFAULT_CHUNK_OVERLAP = 100
@@ -380,17 +398,28 @@ class EmbeddingService:
     @classmethod
     def get_model(cls, model_name: str = DEFAULT_EMBEDDING_MODEL):
         if cls._model is None:
+            # Optimize PyTorch CPU execution on resource-constrained environments (e.g. Render Free)
+            try:
+                import torch
+                import os
+                if not os.environ.get("TORCH_NUM_THREADS"):
+                    torch.set_num_threads(1)
+                if hasattr(torch, "set_num_interop_threads") and not os.environ.get("TORCH_NUM_INTEROP_THREADS"):
+                    torch.set_num_interop_threads(1)
+            except Exception:
+                pass
+
             from sentence_transformers import SentenceTransformer
             cls._model = SentenceTransformer(model_name)
         return cls._model
 
     @classmethod
-    def encode(cls, texts: str | list[str], model_name: str = DEFAULT_EMBEDDING_MODEL) -> np.ndarray:
+    def encode(cls, texts: str | list[str], model_name: str = DEFAULT_EMBEDDING_MODEL, batch_size: int = 16) -> np.ndarray:
         model = cls.get_model(model_name)
         if isinstance(texts, str):
             embedding = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
             return np.asarray(embedding, dtype=np.float32)
-        embeddings = model.encode(texts, convert_to_numpy=True, normalize_embeddings=True)
+        embeddings = model.encode(texts, batch_size=batch_size, convert_to_numpy=True, normalize_embeddings=True)
         return np.asarray(embeddings, dtype=np.float32)
 
 
@@ -466,8 +495,7 @@ class InMemoryVectorIndex:
         def _user_matches(c: dict[str, Any]) -> bool:
             if user_id is None:
                 return True
-            c_uid = c.get("user_id")
-            return c_uid is None or c_uid == user_id
+            return c.get("user_id") == user_id
 
         def _doc_matches(c: dict[str, Any]) -> bool:
             if not _user_matches(c):
@@ -476,14 +504,7 @@ class InMemoryVectorIndex:
                 return True
             c_fn = c.get("filename")
             c_sfn = c.get("saved_filename")
-            if c_fn == filename or c_sfn == filename:
-                return True
-            target_base = Path(filename).name
-            if c_fn and (Path(c_fn).name == target_base or Path(c_fn).name.endswith(f"_{target_base}")):
-                return True
-            if c_sfn and (Path(c_sfn).name == target_base or Path(c_sfn).name.endswith(f"_{target_base}")):
-                return True
-            return False
+            return filename_matches(c_fn, filename) or filename_matches(c_sfn, filename)
 
         indices = [i for i, c in enumerate(self.chunks) if _doc_matches(c)]
         if not indices:

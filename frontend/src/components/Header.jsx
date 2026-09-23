@@ -5,6 +5,7 @@ import "./Header.css";
 export default function Header({
   apiStatus,
   user,
+  onNavigate,
   onOpenAuth,
   onOpenUserMenu,
   onSignOut,
@@ -15,7 +16,6 @@ export default function Header({
   const displayName = user?.full_name || user?.email || "User";
   const initial = displayName.charAt(0).toUpperCase();
 
-  // Close menu on click outside or Escape key
   useEffect(() => {
     function handleClickOutside(e) {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
@@ -53,39 +53,43 @@ export default function Header({
     <header className="header">
       <div className="header__inner">
         <div className="header__brand">
-          <div className="header__logo">
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 28 28"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <rect width="28" height="28" rx="8" fill="url(#logoGrad)" />
-              <path
-                d="M7 14L12 9L17 14L22 9"
-                stroke="white"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M7 19L12 14L17 19L22 14"
-                stroke="white"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeOpacity="0.5"
-              />
-              <defs>
-                <linearGradient id="logoGrad" x1="0" y1="0" x2="28" y2="28">
-                  <stop offset="0%" stopColor="#6366f1" />
-                  <stop offset="100%" stopColor="#8b5cf6" />
-                </linearGradient>
-              </defs>
-            </svg>
-          </div>
-          <span className="header__name">DataLens AI</span>
+          <a
+            href="/"
+            className="header__brand-link"
+            onClick={(e) => {
+              e.preventDefault();
+              onNavigate?.("/");
+            }}
+            aria-label="DataLens AI Home"
+          >
+            <div className="header__logo">
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 28 28"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <rect width="28" height="28" rx="6" fill="#0284c7" />
+                <path
+                  d="M7 14L12 9L17 14L22 9"
+                  stroke="white"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M7 19L12 14L17 19L22 14"
+                  stroke="#bae6fd"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </div>
+            <span className="header__name">DataLens AI</span>
+          </a>
         </div>
 
         <div className="header__actions">
@@ -140,7 +144,7 @@ export default function Header({
                       <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                       <circle cx="12" cy="7" r="4" />
                     </svg>
-                    Profile
+                    Account
                   </button>
 
                   <button
@@ -153,7 +157,7 @@ export default function Header({
                       <circle cx="12" cy="12" r="10" />
                       <polyline points="12 6 12 12 16 14" />
                     </svg>
-                    History
+                    History &amp; Files
                   </button>
 
                   <div className="header__dropdown-divider" />

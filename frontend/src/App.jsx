@@ -9,12 +9,16 @@ import DocumentChat from "./components/DocumentChat";
 import AuthModal from "./components/AuthModal";
 import UserMenuModal from "./components/UserMenuModal";
 import SignOutModal from "./components/SignOutModal";
+import LegalPage from "./components/LegalPage";
 import "./App.css";
 
 const ANALYSIS_TYPES = ["CSV", "XLSX"];
 
 export default function App() {
   const apiStatus = useHealthCheck();
+
+  // Route state (SPA routing supporting direct URLs and page refreshes)
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
 
   // Authentication state
   const [user, setUser] = useState(() => getStoredUser());
@@ -32,7 +36,32 @@ export default function App() {
 
   const isDocChat = Boolean(uploadResult && !ANALYSIS_TYPES.includes(uploadResult.file_type));
 
-  // Always show a fresh empty workspace on app startup / reload
+  // Listen for browser navigation (back/forward)
+  useEffect(() => {
+    function handlePopState() {
+      setCurrentPath(window.location.pathname);
+    }
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  // Programmatic navigation updating URL and state
+  function navigate(path) {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, "", path);
+      setCurrentPath(path);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
+  // Update document title for workspace
+  useEffect(() => {
+    if (currentPath !== "/privacy" && currentPath !== "/terms") {
+      document.title = "DataLens AI: Dataset Analytics & Document Intelligence";
+    }
+  }, [currentPath]);
+
+  // Always show fresh workspace on initial mount
   useEffect(() => {
     handleResetUpload();
     setWorkspaceKey((prev) => prev + 1);
@@ -54,7 +83,6 @@ export default function App() {
     }
     window.addEventListener("auth-changed", handleAuthChange);
 
-    // Verify token validity with backend
     getMe().then((profile) => {
       if (profile) setUser(profile);
     }).catch(() => {});
@@ -62,7 +90,6 @@ export default function App() {
     return () => window.removeEventListener("auth-changed", handleAuthChange);
   }, []);
 
-  // Clear document & analysis state when resetting upload or starting new upload
   function handleResetUpload() {
     setUploadResult(null);
     setAnalysisData(null);
@@ -70,12 +97,10 @@ export default function App() {
     setAnalysisState("idle");
   }
 
-  // Prompt confirmation modal when user clicks Sign Out
   function handleRequestSignOut() {
     setSignOutModalOpen(true);
   }
 
-  // Complete workspace reset on confirmed sign out
   function handleConfirmSignOut() {
     clearAuthData();
     setUser(null);
@@ -100,6 +125,21 @@ export default function App() {
     } catch (err) {
       setAnalysisState("error");
       setAnalysisError(err.message || "Analysis failed. Please try again.");
+    }
+  }
+
+  function handleDeleteDocument(deletedDoc) {
+    if (!deletedDoc) return;
+    const deletedId = deletedDoc.id || deletedDoc.document_id;
+    const deletedSaved = deletedDoc.saved_filename;
+    const currentSaved = uploadResult?.saved_filename;
+    const currentId = uploadResult?.id || uploadResult?.document_id;
+
+    if (
+      (deletedId && currentId && deletedId === currentId) ||
+      (deletedSaved && currentSaved && deletedSaved === currentSaved)
+    ) {
+      handleResetUpload();
     }
   }
 
@@ -131,13 +171,11 @@ export default function App() {
     }, 100);
   }
 
-  // Called by UploadZone on every successful upload
   async function handleUploadSuccess(uploadData) {
     setUploadResult(uploadData);
     setAnalysisData(null);
     setAnalysisError("");
 
-    // Only analyse CSV and XLSX - skip PDF/DOCX for tabular analysis
     if (!ANALYSIS_TYPES.includes(uploadData.file_type)) {
       setAnalysisState("idle");
       return;
@@ -146,40 +184,37 @@ export default function App() {
     await runTabularAnalysis(uploadData.saved_filename);
   }
 
-  // Decide what to render in the results card
   function renderResults() {
-    // Analysis running
     if (analysisState === "loading") {
       return (
         <div className="analysis-loading" role="status" aria-live="polite">
           <div className="analysis-loading__spinner" aria-hidden="true">
-            <svg viewBox="0 0 50 50" width="40" height="40">
+            <svg viewBox="0 0 50 50" width="38" height="38">
               <circle
                 cx="25"
                 cy="25"
                 r="20"
                 fill="none"
-                stroke="rgba(99,102,241,0.2)"
-                strokeWidth="4"
+                stroke="rgba(2, 132, 199, 0.2)"
+                strokeWidth="3.5"
               />
               <circle
                 cx="25"
                 cy="25"
                 r="20"
                 fill="none"
-                stroke="#818cf8"
-                strokeWidth="4"
+                stroke="#0284c7"
+                strokeWidth="3.5"
                 strokeDasharray="80 45"
                 strokeLinecap="round"
               />
             </svg>
           </div>
-          <p className="analysis-loading__text">Analysing dataset...</p>
+          <p className="analysis-loading__text">Analysing dataset statistics and distributions...</p>
         </div>
       );
     }
 
-    // Analysis success
     if (analysisState === "success" && analysisData) {
       return (
         <AnalysisResults
@@ -189,7 +224,6 @@ export default function App() {
       );
     }
 
-    // Analysis error
     if (analysisState === "error") {
       return (
         <div className="analysis-error" role="alert">
@@ -199,7 +233,6 @@ export default function App() {
       );
     }
 
-    // PDF/DOCX uploaded -> Unified AI RAG Chat
     if (uploadResult && !ANALYSIS_TYPES.includes(uploadResult.file_type)) {
       return (
         <DocumentChat
@@ -211,8 +244,7 @@ export default function App() {
       );
     }
 
-    // Default: nothing uploaded yet
-    return <ResultsPlaceholder uploadedFile={uploadResult} />;
+    return <ResultsPlaceholder />;
   }
 
   return (
@@ -220,41 +252,86 @@ export default function App() {
       <Header
         apiStatus={apiStatus}
         user={user}
+        onNavigate={navigate}
         onOpenAuth={() => setAuthModalOpen(true)}
         onOpenUserMenu={handleOpenUserMenu}
         onSignOut={handleRequestSignOut}
       />
 
-      <main className="main">
-        {/* Hero */}
-        <section className="hero" aria-labelledby="hero-title">
-          <div className="hero__badge">
-            <span className="hero__badge-dot" aria-hidden="true" />
-            AI-Powered Analysis & Documents
+      {/* Route: /privacy */}
+      {currentPath === "/privacy" && (
+        <LegalPage type="privacy" onNavigate={navigate} />
+      )}
+
+      {/* Route: /terms */}
+      {currentPath === "/terms" && (
+        <LegalPage type="terms" onNavigate={navigate} />
+      )}
+
+      {/* Route: / (Default Workspace) */}
+      {currentPath !== "/privacy" && currentPath !== "/terms" && (
+        <main className="main">
+          {/* Modern Hero Section */}
+          <section className="hero" aria-labelledby="hero-title">
+            <h1 id="hero-title" className="hero__title">
+              Analyze datasets and query documents in one workspace
+            </h1>
+            <p className="hero__subtitle">
+              Upload spreadsheets for automated statistics, distributions, and charts, or index documents to ask questions with verified citations.
+            </p>
+          </section>
+
+          {/* Upload Card */}
+          <div className="card">
+            <div className="card__header-bar">
+              <span className="card__title">Upload Dataset or Document</span>
+              <span className="card__meta">CSV &middot; XLSX &middot; PDF &middot; DOCX (20 MB limit)</span>
+            </div>
+            <UploadZone
+              key={workspaceKey}
+              user={user}
+              onRequireAuth={() => setAuthModalOpen(true)}
+              onUploadSuccess={handleUploadSuccess}
+              onReset={handleResetUpload}
+            />
           </div>
-          <h1 id="hero-title" className="hero__title">
-            Turn your files into{" "}
-            <span className="hero__title-accent">instant insights</span>
-          </h1>
-          <p className="hero__subtitle">
-            Upload CSV/XLSX for automated statistics, charts, and Groq AI insights,
-            or upload PDF/DOCX to chat grounded in your document context.
-          </p>
-        </section>
 
-        {/* Upload Card */}
-        <div className="card">
-          <div className="card__label">Step 1 - Upload a file</div>
-          <UploadZone key={workspaceKey} user={user} onRequireAuth={() => setAuthModalOpen(true)} onUploadSuccess={handleUploadSuccess} onReset={handleResetUpload} />
-        </div>
+          {/* Results / Analysis Card */}
+          <div className={`card ${isDocChat ? "card--doc-chat" : ""}`}>
+            {renderResults()}
+          </div>
+        </main>
+      )}
 
-        {/* Results / Analysis Card */}
-        <div className={`card ${isDocChat ? "card--doc-chat" : ""}`}>{renderResults()}</div>
-      </main>
-
+      {/* Global Footer with Working Dedicated Route Links */}
       <footer className="footer">
-        <p>DataLens AI — AI-powered data and document analysis</p>
-        <p className="footer__copyright">© 2026 DataLens AI. All rights reserved.</p>
+        <div className="footer__content">
+          <p className="footer__tagline">DataLens AI: Dataset Analytics and Document Intelligence</p>
+          <nav className="footer__nav" aria-label="Legal navigation">
+            <a
+              href="/privacy"
+              className={`footer__link ${currentPath === "/privacy" ? "footer__link--active" : ""}`}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/privacy");
+              }}
+            >
+              Privacy Policy
+            </a>
+            <span className="footer__sep" aria-hidden="true">&middot;</span>
+            <a
+              href="/terms"
+              className={`footer__link ${currentPath === "/terms" ? "footer__link--active" : ""}`}
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/terms");
+              }}
+            >
+              Terms of Service
+            </a>
+          </nav>
+          <p className="footer__copyright">&copy; 2026 DataLens AI. All rights reserved.</p>
+        </div>
       </footer>
 
       {/* Authentication Modal */}
@@ -271,6 +348,7 @@ export default function App() {
         user={user}
         onClose={() => setUserModalOpen(false)}
         onSelectDocument={handleSelectDocument}
+        onDeleteDocument={handleDeleteDocument}
         onSignOut={handleRequestSignOut}
       />
 

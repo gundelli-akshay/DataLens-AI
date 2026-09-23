@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { chatDocument, getDocumentMessages } from "../services/api";
+import { chatDocument, getDocumentMessages, indexDocument } from "../services/api";
 import MarkdownRenderer from "./MarkdownRenderer";
+import DeleteConfirmModal from "./DeleteConfirmModal";
 import "./DocumentChat.css";
 
 const SUGGESTIONS = [
@@ -18,27 +19,38 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
     {
       id: `init_${Date.now()}`,
       role: "assistant",
-      content: `I've analyzed **${fileName}** (${fileType}). Ask any question about this document — every answer is strictly grounded in the document context with verified source citations.`,
+      content: `I have analyzed **${fileName}** (${fileType}). Ask any question about this document: every answer is strictly grounded in the document context with verified source citations.`,
       sources: [],
     },
   ]);
   const [inputQuery, setInputQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [chatStage, setChatStage] = useState("Searching document...");
+  const [indexState, setIndexState] = useState("ready"); // "preparing" | "indexing" | "ready"
   const [errorMsg, setErrorMsg] = useState("");
   const [expandedSources, setExpandedSources] = useState({});
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Reset all chat messages, inputs, and sources whenever a new document is loaded
   useEffect(() => {
     const welcome = {
       id: `init_${Date.now()}`,
       role: "assistant",
-      content: `I've analyzed **${fileName}** (${fileType}). Ask any question about this document — every answer is strictly grounded in the document context with verified source citations.`,
+      content: `I have analyzed **${fileName}** (${fileType}). Ask any question about this document: every answer is strictly grounded in the document context with verified source citations.`,
       sources: [],
     };
     setMessages([welcome]);
     setInputQuery("");
     setErrorMsg("");
     setExpandedSources({});
+
+    // Proactively index document in background so first question has zero indexing delay
+    if (savedFilename) {
+      setIndexState("indexing");
+      indexDocument(savedFilename)
+        .then(() => setIndexState("ready"))
+        .catch(() => setIndexState("ready"));
+    }
 
     // If authenticated and reopening an existing document, load saved messages
     if (user && savedFilename) {
@@ -74,8 +86,6 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading]);
 
-
-
   function toggleSourceSnippet(msgId, sourceIdx) {
     const key = `${msgId}_${sourceIdx}`;
     setExpandedSources((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -103,6 +113,12 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
 
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
+    setChatStage(indexState === "indexing" ? "Indexing document..." : "Searching document...");
+
+    // Advance to generating answer after retrieval phase
+    const stageTimer = setTimeout(() => {
+      setChatStage("Generating answer...");
+    }, 700);
 
     try {
       const response = await chatDocument({
@@ -110,6 +126,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
         filename: fileName,
         savedFilename: savedFilename,
       });
+      clearTimeout(stageTimer);
 
       const assistantMsg = {
         id: `asst_${Date.now()}`,
@@ -121,6 +138,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
 
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
+      clearTimeout(stageTimer);
       const msg = err.message || "";
       if (msg.includes("credentials") || msg.includes("authenticated") || msg.includes("401")) {
         setErrorMsg("Please sign in to chat with documents.");
@@ -168,9 +186,9 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
             </svg>
           </div>
           <div>
-            <h3 className="doc-chat__title">Document AI Chat</h3>
+            <h3 className="doc-chat__title">Document Intelligence</h3>
             <span className="doc-chat__subtitle">
-              {fileName} &bull; {fileType}
+              {fileName} &middot; {fileType}
             </span>
           </div>
         </div>
@@ -179,7 +197,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
           <button
             type="button"
             className="doc-chat__reset-btn"
-            onClick={handleReset}
+            onClick={() => setShowClearConfirm(true)}
             title="Reset conversation"
             aria-label="Reset conversation"
           >
@@ -282,7 +300,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
                 <span className="doc-chat__dot"></span>
                 <span className="doc-chat__dot"></span>
                 <span className="doc-chat__dot"></span>
-                <span className="doc-chat__thinking-text">Searching document...</span>
+                <span className="doc-chat__thinking-text">{chatStage}</span>
               </div>
             </div>
           </div>
@@ -311,7 +329,7 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
           ref={inputRef}
           type="text"
           className="doc-chat__input"
-          placeholder={`Ask anything grounded in ${fileName}...`}
+          placeholder={`Ask a question grounded in ${fileName}...`}
           value={inputQuery}
           onChange={(e) => setInputQuery(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -334,6 +352,20 @@ export default function DocumentChat({ document, user, onRequireAuth }) {
           )}
         </button>
       </form>
+
+      {/* Clear Conversation Confirmation Modal */}
+      <DeleteConfirmModal
+        isOpen={showClearConfirm}
+        title="Delete this conversation?"
+        description="This conversation will be permanently removed."
+        itemName={`${fileName} (${fileType})`}
+        confirmLabel="Delete"
+        onClose={() => setShowClearConfirm(false)}
+        onConfirm={() => {
+          handleReset();
+          setShowClearConfirm(false);
+        }}
+      />
     </div>
   );
 }

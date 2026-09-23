@@ -1,23 +1,23 @@
-/* SignOutModal.css - Clean, human-designed confirmation modal */
+/* DeleteConfirmModal.css - Clean, human-designed confirmation modal matching SignOutModal */
 
-.signout-modal-overlay {
+.delete-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(5, 8, 18, 0.82);
+  background: rgba(5, 8, 18, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1100;
+  z-index: 1200;
   padding: 1rem;
-  animation: signoutFadeIn 0.15s ease-out;
+  animation: deleteFadeIn 0.15s ease-out;
 }
 
-@keyframes signoutFadeIn {
+@keyframes deleteFadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-.signout-modal-card {
+.delete-modal-card {
   position: relative;
   width: 100%;
   max-width: 380px;
@@ -25,15 +25,15 @@
   border: 1px solid #1e293b;
   border-radius: 8px;
   padding: 1.75rem 1.5rem 1.5rem;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  animation: signoutSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.65);
+  animation: deleteSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
 }
 
-@keyframes signoutSlideUp {
+@keyframes deleteSlideUp {
   from {
     transform: translateY(12px) scale(0.98);
     opacity: 0;
@@ -44,7 +44,7 @@
   }
 }
 
-.signout-modal-close {
+.delete-modal-close {
   position: absolute;
   top: 0.85rem;
   right: 0.85rem;
@@ -63,17 +63,17 @@
   line-height: 1;
 }
 
-.signout-modal-close:hover:not(:disabled) {
+.delete-modal-close:hover:not(:disabled) {
   background: #1e293b;
   color: #ffffff;
 }
 
-.signout-modal-close:disabled {
+.delete-modal-close:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.signout-modal-header {
+.delete-modal-header {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -81,7 +81,7 @@
   margin-bottom: 0.35rem;
 }
 
-.signout-modal-icon {
+.delete-modal-icon {
   width: 42px;
   height: 42px;
   border-radius: 6px;
@@ -93,27 +93,42 @@
   color: #f87171;
 }
 
-.signout-modal-title {
+.delete-modal-title {
   font-size: 1.15rem;
   font-weight: 700;
   color: #f8fafc;
   margin: 0;
 }
 
-.signout-modal-desc {
+.delete-modal-item {
+  font-size: 0.78rem;
+  font-family: var(--font-mono, monospace);
+  color: #38bdf8;
+  background: #090d16;
+  border: 1px solid #1e293b;
+  padding: 0.25rem 0.65rem;
+  border-radius: 4px;
+  margin: 0.35rem 0 0.5rem 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delete-modal-desc {
   font-size: 0.85rem;
   color: #94a3b8;
   margin: 0 0 1.25rem 0;
   line-height: 1.5;
 }
 
-.signout-modal-actions {
+.delete-modal-actions {
   display: flex;
   width: 100%;
   gap: 0.65rem;
 }
 
-.signout-btn {
+.delete-btn {
   flex: 1;
   padding: 0.55rem 1rem;
   border-radius: 6px;
@@ -128,30 +143,30 @@
   justify-content: center;
 }
 
-.signout-btn:focus-visible {
+.delete-btn:focus-visible {
   box-shadow: 0 0 0 2px #0284c7;
 }
 
-.signout-btn--cancel {
+.delete-btn--cancel {
   background: #1e293b;
   border: 1px solid #334155;
   color: #f1f5f9;
 }
 
-.signout-btn--cancel:hover:not(:disabled) {
+.delete-btn--cancel:hover:not(:disabled) {
   background: #334155;
 }
 
-.signout-btn--danger {
+.delete-btn--danger {
   background: #ef4444;
   color: #ffffff;
 }
 
-.signout-btn--danger:hover:not(:disabled) {
+.delete-btn--danger:hover:not(:disabled) {
   background: #dc2626;
 }
 
-.signout-btn:disabled {
+.delete-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

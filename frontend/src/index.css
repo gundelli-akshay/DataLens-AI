@@ -1,4 +1,4 @@
-/* ── Global reset & base ─────────────────────────────────────── */
+/* Global reset & base */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -6,18 +6,45 @@
 }
 
 :root {
-  /* Palette */
-  --bg-base:        #0a0b14;
-  --bg-surface:     #0f1020;
-  --accent-start:   #6366f1;
-  --accent-end:     #8b5cf6;
-  --text-primary:   #e2e8f0;
+  /* Color Palette - Restrained Slate & Precision Cobalt (Zero Purple) */
+  --bg-base:        #090d16;
+  --bg-surface:     #0f172a;
+  --bg-surface-hover: #17223b;
+  --bg-elevated:    #1e293b;
+  --bg-subtle:      #131c2e;
+
+  /* Accent Colors */
+  --accent-primary: #0284c7;
+  --accent-hover:   #0369a1;
+  --accent-subtle:  rgba(2, 132, 199, 0.12);
+  --accent-border:  rgba(2, 132, 199, 0.35);
+
+  /* Status Colors */
+  --color-success:  #10b981;
+  --color-warning:  #f59e0b;
+  --color-error:    #ef4444;
+
+  /* Text Contrast Hierarchy */
+  --text-primary:   #f8fafc;
   --text-secondary: #94a3b8;
-  --text-muted:     #475569;
-  --border:         rgba(255, 255, 255, 0.07);
+  --text-muted:     #64748b;
+  --text-subtle:    #475569;
+
+  /* Structural Borders */
+  --border-subtle:  #1e293b;
+  --border-default: #25334a;
+  --border-strong:  #334155;
+  --border-focus:   #0284c7;
+
+  /* Restrained Geometric Radii (No Pill Shapes) */
+  --radius-xs:      4px;
+  --radius-sm:      6px;
+  --radius-md:      8px;
+  --radius-lg:      12px;
 
   /* Typography */
-  --font: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
 html {
@@ -26,22 +53,32 @@ html {
 }
 
 body {
-  font-family: var(--font);
+  font-family: var(--font-sans);
   background-color: var(--bg-base);
   color: var(--text-primary);
   line-height: 1.6;
   min-height: 100vh;
-  /* Radial gradient background glow */
-  background-image:
-    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99,102,241,0.18) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 80% 80%,  rgba(139,92,246,0.10) 0%, transparent 55%);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-a { color: inherit; text-decoration: none; }
+a {
+  color: inherit;
+  text-decoration: none;
+}
 
-button, [role="button"] {
-  font-family: var(--font);
+button, [role="button"], input, select, textarea {
+  font-family: var(--font-sans);
+}
+
+button {
   cursor: pointer;
 }
 
-p { margin: 0; }
+p {
+  margin: 0;
+}
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
+}

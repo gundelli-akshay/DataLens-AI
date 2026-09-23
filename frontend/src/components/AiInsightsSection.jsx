@@ -6,6 +6,9 @@ import "./AiInsightsSection.css";
 export default function AiInsightsSection({ analysisData, savedFilename }) {
   const [status, setStatus] = useState(analysisData?.ai_insights ? "success" : "idle"); // idle | loading | success | error
   const [insights, setInsights] = useState(analysisData?.ai_insights || "");
+  const [modelLabel, setModelLabel] = useState(
+    analysisData?.is_fallback ? "Model: Groq · Fallback" : "Model: Gemini"
+  );
 
   useEffect(() => {
     if (analysisData?.ai_insights) {
@@ -29,6 +32,13 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
         savedFilename: savedFilename,
       });
       setInsights(res.insights || "No insights returned.");
+      if (res.is_fallback || (res.model && res.model.toLowerCase().includes("fallback"))) {
+        setModelLabel("Model: Groq · Fallback");
+      } else if (res.model && res.model.toLowerCase().includes("groq")) {
+        setModelLabel("Model: Groq");
+      } else {
+        setModelLabel("Model: Gemini");
+      }
       setStatus("success");
     } catch (err) {
       setStatus("error");
@@ -53,29 +63,32 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
               <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
             </svg>
           </span>
-          <h3 className="ai-insights__title">AI Insights</h3>
-          <span className="ai-insights__badge">Grounded Analysis</span>
+          <h3 className="ai-insights__title">Automated Insights</h3>
+          <span className="ai-insights__badge">DATA POWERED</span>
+          <span className="ai-insights__model-info">{modelLabel}</span>
         </div>
 
         {status === "success" && (
           <div className="ai-insights__actions">
             <button
+              type="button"
               className="ai-insights__copy-btn"
               onClick={handleCopy}
               aria-label="Copy insights to clipboard"
             >
-              {copied ? "Copied!" : "Copy"}
+              {copied ? "Copied" : "Copy"}
             </button>
             <button
+              type="button"
               className="ai-insights__regen-btn"
               onClick={handleGenerateInsights}
               aria-label="Regenerate AI Insights"
             >
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "4px" }}>
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
-                <path d="M21 3v5h-5" />
+                <polyline points="21 3 21 8 16 8" />
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
-                <path d="M3 21v-5h5" />
+                <polyline points="8 16 3 16 3 21" />
               </svg>
               Regenerate
             </button>
@@ -86,16 +99,14 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
       {status === "idle" && (
         <div className="ai-insights__idle">
           <p className="ai-insights__desc">
-            Use AI to explain grounded patterns, summarize distributions, and highlight data quality findings from this dataset.
+            Synthesize key patterns, correlation signals, category skews, and data anomalies from the computed statistics.
           </p>
           <button
+            type="button"
             className="ai-insights__btn"
             onClick={handleGenerateInsights}
           >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: "6px" }}>
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-            </svg>
-            Generate AI Insights
+            Generate Narrative Insights
           </button>
         </div>
       )}
@@ -103,36 +114,30 @@ export default function AiInsightsSection({ analysisData, savedFilename }) {
       {status === "loading" && (
         <div className="ai-insights__loading" role="status" aria-live="polite">
           <div className="ai-insights__spinner" aria-hidden="true" />
-          <p className="ai-insights__loading-text">
-            Synthesizing calculated statistics and generating grounded insights...
-          </p>
+          <span className="ai-insights__loading-text">
+            Synthesizing statistical distributions and generating narrative report...
+          </span>
         </div>
       )}
 
       {status === "error" && (
         <div className="ai-insights__error" role="alert">
-          <div className="ai-insights__error-icon" aria-hidden="true">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="12" />
-              <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          </div>
-          <div className="ai-insights__error-content">
-            <p className="ai-insights__error-title">Unable to generate AI insights</p>
+          <div>
+            <p className="ai-insights__error-title">Failed to generate insights</p>
             <p className="ai-insights__error-msg">{errorMsg}</p>
             <button
+              type="button"
               className="ai-insights__retry-btn"
               onClick={handleGenerateInsights}
             >
-              Try Again
+              Retry
             </button>
           </div>
         </div>
       )}
 
       {status === "success" && (
-        <div className="ai-insights__result">
+        <div className="ai-insights__body">
           <MarkdownRenderer content={insights} />
         </div>
       )}

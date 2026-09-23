@@ -1,6 +1,6 @@
 # DataLens AI
 
-DataLens AI is a full-stack data and document intelligence platform designed to analyze both structured datasets (CSV, XLSX) and unstructured documents (PDF, DOCX). For structured data, it automatically performs statistical profiling, detects anomalies, and generates responsive visualizations. For documents, it extracts content and enables conversational exploration through grounded retrieval-augmented generation (RAG) with source citations. By combining programmatic analytics with multi-model LLM routing, DataLens AI provides data insights and grounded document answers within a single unified workspace.
+DataLens AI is a data and document intelligence platform designed to analyze structured datasets (CSV, XLSX) and unstructured documents (PDF, DOCX) in a single unified workspace. For tabular data, it automatically computes statistical profiles, evaluates data quality, and generates responsive visualizations. For documents, it extracts structured text and enables conversational question answering through grounded retrieval-augmented generation (RAG) with exact source citations. By combining local analytical computing with resilient dual-LLM routing (Google Gemini primary with Groq fallback), DataLens AI provides reliable data insights and verified answers without hallucinations.
 
 ---
 
@@ -12,26 +12,31 @@ DataLens AI is a full-stack data and document intelligence platform designed to 
 
 ## Features
 
-- **Tabular Data Analytics (CSV, XLSX)**:
-  - Automatic column profiling, missing value detection, data type inference, and statistical summaries (min, max, mean, median, standard deviation).
-  - Four purposeful chart types powered by Recharts: **Bar** (categorical comparison), **Line** (trend over time/order), **Histogram** (distribution), and **Scatter** (relationship between two variables).
-- **Document Extraction & Grounded RAG (PDF, DOCX)**:
-  - Text and structure extraction using PyMuPDF and python-docx.
-  - Overlapping chunking and semantic vector search (`sentence-transformers`).
-  - Strict grounding: answers cite exact page numbers and explicitly state when information is unavailable rather than hallucinating.
-- **Dual-LLM Routing**:
-  - **Google Gemini 3.8 Flash** (`google-genai`) as the high-speed primary model.
-  - Automatic failover to **Groq Cloud** (`openai/gpt-oss-20b`) if Gemini hits rate limits, timeouts, or network errors.
-- **Authentication & User Isolation**:
-  - Email/Password authentication with salted `bcrypt` hashing and Google OAuth 2.0 (Google Identity Services).
-  - Secure signed JWT sessions (24-hour expiration).
-  - Strict tenant isolation: all documents and chat messages are scoped to the authenticated user.
+- **Tabular Dataset Analytics (CSV, XLSX)**:
+  - Automatic column profiling, missing value detection, data type inference, and statistical summaries (mean, median, standard deviation, quantiles, and category frequencies).
+  - Four purposeful chart types powered by Recharts: **Bar** (categorical comparison), **Line** (trend analysis), **Histogram** (distribution spread), and **Scatter** (numerical correlations).
+  - Executive dataset narrative synthesizing key patterns, outliers, and skews.
+- **Document Intelligence & Grounded RAG (PDF, DOCX)**:
+  - Text and structure extraction using PyMuPDF (PDF) and python-docx (Word).
+  - Overlapping chunking and fast in-memory semantic vector search using `sentence-transformers`.
+  - Strict citation grounding: answers cite exact source locations (page numbers for PDF, paragraph numbers for DOCX) and explicitly state when information is missing rather than hallucinating.
+- **Resilient Dual-LLM Routing**:
+  - **Google Gemini 3.8 Flash** (`google-genai`) configured as the primary high-speed model.
+  - Automatic fallback to **Groq Cloud** (`openai/gpt-oss-20b`) if Gemini encounters rate limits, timeouts, or network errors.
+- **Dedicated Legal Pages & Routing**:
+  - Built-in, dedicated routes for **Privacy Policy** (`/privacy`) and **Terms of Service** (`/terms`).
+  - Seamless client-side navigation with direct URL access and browser refresh support.
+  - Transparent documentation of ephemeral AI processing and user data ownership.
+- **Authentication & Multi-Tenant Isolation**:
+  - Email and password authentication with salted `bcrypt` hashing, alongside Google OAuth 2.0 (Google Identity Services).
+  - Cryptographically signed JWT session tokens (24-hour expiration).
+  - Strict tenant isolation: all documents, embeddings, and chat histories are scoped to the authenticated user account.
   - File upload and analysis strictly require authentication. Unauthenticated visitors can view the landing page and authentication modal.
 - **Cloud-Native Database & Storage**:
-  - **PostgreSQL (Supabase)**: Persistent storage for users, document metadata, and chat history. SQLite is disabled for production application use.
-  - **Supabase Storage**: Persistent file storage in the `datalens-files` bucket, with a local ephemeral cache (`data/uploads/`) for fast Python processing.
+  - **PostgreSQL (Supabase)**: Persistent storage for user accounts, document metadata, and conversation histories. SQLite is disabled for production application use.
+  - **Supabase Storage**: Persistent object storage in the `datalens-files` bucket, with an ephemeral local cache (`data/uploads/`) for high-throughput Python processing.
 - **Full Docker Support**:
-  - Containerized with Docker Compose using a multi-stage Nginx frontend build and a Python 3.11-slim FastAPI backend.
+  - Containerized deployment with Docker Compose using a multi-stage Nginx frontend build and a Python 3.11-slim FastAPI backend.
 
 ---
 
@@ -53,13 +58,13 @@ Authentication modal supporting email/password sign-in and Google OAuth 2.0:
 
 | Layer | Technologies |
 | :--- | :--- |
-| **Frontend** | React 19, Vite, Recharts, Lucide Icons, Vanilla CSS |
+| **Frontend** | React 19, Vite, Recharts, Custom SVG Sprites (Zero External Icon Overhead), Vanilla CSS |
 | **Backend** | Python 3.11, FastAPI, Uvicorn, Pydantic v2, SQLAlchemy 2.0 |
 | **Data Processing** | Pandas, OpenPyXL, NumPy |
 | **Document & RAG** | PyMuPDF (fitz), python-docx, Sentence-Transformers |
 | **AI / LLMs** | Google Gemini (`gemini-3.8-flash`), Groq (`openai/gpt-oss-20b`) |
 | **Database & Storage** | Supabase PostgreSQL, Supabase Storage (`datalens-files`) |
-| **Authentication** | JWT (PyJWT), Passlib/Bcrypt, Google Identity Services |
+| **Authentication** | Bcrypt & PyJWT, Google Identity Services |
 | **DevOps** | Docker, Docker Compose, Nginx |
 
 ---
@@ -71,26 +76,27 @@ DataLens-AI/
 |-- backend/
 |   |-- app/
 |   |   |-- api/          # Route endpoints (auth, upload, analyze, insights, documents, health)
-|   |   |-- core/         # Settings, config validation, and JWT authentication
+|   |   |-- core/         # Configuration validation, settings, and JWT security
 |   |   |-- db/           # SQLAlchemy models and PostgreSQL session management
-|   |   |-- services/     # Analysis, document extraction, dual-LLM routing, RAG, and storage
+|   |   |-- services/     # Statistical profiling, document extraction, dual-LLM routing, RAG, and storage
 |   |   `-- main.py       # FastAPI application entry point
-|   |-- tests/            # Backend test suite
+|   |-- tests/            # Automated test suite (170 unit and integration tests)
 |   |-- Dockerfile        # Backend container definition
 |   `-- requirements.txt  # Python dependencies
 |-- frontend/
 |   |-- src/
-|   |   |-- components/   # React components (UploadZone, ChartPanel, DocumentChat, AuthModal, SignOutModal)
+|   |   |-- components/   # React components (UploadZone, ResultsPlaceholder, ChartPanel, DocumentChat, LegalPage, etc.)
 |   |   |-- services/     # API client and authentication token state
-|   |   |-- App.jsx       # Main application layout and state
+|   |   |-- App.jsx       # Client-side router and root workspace layout
 |   |   `-- main.jsx      # React entry point
 |   |-- Dockerfile        # Multi-stage frontend container (Vite build + Nginx)
 |   |-- nginx.conf        # Nginx reverse proxy routing (/api/ -> backend:8000)
 |   `-- package.json      # Node.js dependencies and scripts
 |-- docs/
-|   `-- architecture-diagram.svg  # System architecture diagram
-|-- docker-compose.yml    # Docker Compose multi-container setup
-|-- .env.example          # Environment variables template
+|   |-- architecture-diagram.svg  # System architecture diagram
+|   `-- screenshots/      # Product walkthrough screenshots
+|-- docker-compose.yml    # Multi-container orchestration definition
+|-- .env.example          # Environment configuration template
 `-- README.md             # Project documentation
 ```
 
@@ -169,7 +175,7 @@ cd frontend
 npm install
 npm run dev
 ```
-The Vite development server will start at [http://localhost:5173](http://localhost:5173), automatically proxying `/api` calls to `http://localhost:8000`.
+The Vite development server will start at [http://localhost:5173](http://localhost:5173), automatically proxying `/api` calls to `http://127.0.0.1:8000`.
 
 ---
 
@@ -199,7 +205,7 @@ GEMINI_API_KEY=<your-gemini-api-key>
 GEMINI_MODEL=gemini-3.8-flash
 GROQ_API_KEY=<your-groq-api-key>
 GROQ_MODEL=openai/gpt-oss-20b
-GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_BASE_URL=https://api.groq.com
 
 # Authentication & Security
 GOOGLE_CLIENT_ID=<your-google-oauth-client-id>.apps.googleusercontent.com
@@ -208,7 +214,7 @@ JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=1440
 
 # CORS
-CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8000
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000,http://localhost:8000
 ```
 
 ---
@@ -219,11 +225,12 @@ CORS_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:8000
 2. **Upload**: Drag and drop a `.csv`, `.xlsx`, `.pdf`, or `.docx` file (up to 20 MB).
 3. **Inspect**:
    - **For tabular files**: View dataset shape, column metrics, null percentage, and interactive Recharts visualizations.
-   - **For documents**: Review document structure and chunk count.
-4. **Generate Insights**: Click **Generate AI Insights** to produce an executive analytical summary via Gemini (with automatic Groq fallback).
-5. **Ask Questions (RAG)**: Chat with uploaded PDFs or Word documents. Every answer includes specific page-number citations grounded in the text.
+   - **For documents**: Review document structure, paragraph count, and chunk count.
+4. **Generate Insights**: Click **Generate AI Insights** to produce an analytical summary via Google Gemini (with automatic Groq fallback).
+5. **Ask Questions (RAG)**: Chat with uploaded PDFs or Word documents. Every answer includes specific source citations (PDF page numbers or DOCX paragraph numbers) grounded in the text.
 6. **Switch Documents**: Browse and switch between previous files in the History sidebar with preserved chat and analytical state.
-7. **Sign Out**: Click **Sign Out** and confirm via the dialog to securely clear the session.
+7. **Review Policies**: Access dedicated **Privacy Policy** (`/privacy`) and **Terms of Service** (`/terms`) directly from the footer.
+8. **Sign Out**: Click **Sign Out** and confirm via the dialog to securely clear the session.
 
 ---
 

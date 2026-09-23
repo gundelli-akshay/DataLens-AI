@@ -247,6 +247,23 @@ def _call_gemini(system_prompt: str, user_prompt: str, temperature: float = 0.2)
     return response.text.strip()
 
 
+def _extract_groq_error_detail(exc: Exception) -> tuple[str, str]:
+    """Extract (error_code, error_message) safely from a Groq API exception."""
+    body = getattr(exc, "body", None)
+    code = ""
+    msg = ""
+    if isinstance(body, dict):
+        err_dict = body.get("error", {})
+        if isinstance(err_dict, dict):
+            code = str(err_dict.get("code") or "")
+            msg = str(err_dict.get("message") or "")
+    if not msg:
+        msg = str(exc)
+    if settings.groq_api_key and settings.groq_api_key in msg:
+        msg = msg.replace(settings.groq_api_key, "[REDACTED]")
+    return code, msg
+
+
 def _call_groq(
     system_prompt: str,
     user_prompt: str,
@@ -262,7 +279,8 @@ def _call_groq(
         )
 
     if client is None:
-        client = Groq(api_key=api_key)
+        base_url = settings.groq_base_url.strip() if settings.groq_base_url else None
+        client = Groq(api_key=api_key, base_url=base_url) if base_url else Groq(api_key=api_key)
 
     try:
         response = client.chat.completions.create(
@@ -281,10 +299,21 @@ def _call_groq(
         raise RuntimeError("Groq AI service timed out. Please try again.") from exc
     except APIConnectionError as exc:
         raise RuntimeError("Unable to connect to the Groq AI service. Please check network connectivity.") from exc
-    except (BadRequestError, NotFoundError) as exc:
-        raise RuntimeError(f"Requested AI model '{settings.groq_model}' is unavailable or invalid.") from exc
+    except NotFoundError as exc:
+        code, msg = _extract_groq_error_detail(exc)
+        if code == "model_not_found" or ("model" in msg.lower() and ("not found" in msg.lower() or "does not exist" in msg.lower())):
+            raise RuntimeError(f"Requested AI model '{settings.groq_model}' is unavailable or invalid.") from exc
+        if code == "unknown_url" or "unknown request url" in msg.lower():
+            raise RuntimeError(f"Groq API endpoint URL is invalid: {msg}") from exc
+        raise RuntimeError(f"Groq resource not found (HTTP 404): {msg}") from exc
+    except BadRequestError as exc:
+        code, msg = _extract_groq_error_detail(exc)
+        if "model" in msg.lower() and ("not found" in msg.lower() or "invalid" in msg.lower() or "does not exist" in msg.lower()):
+            raise RuntimeError(f"Requested AI model '{settings.groq_model}' is unavailable or invalid.") from exc
+        raise RuntimeError(f"Groq API request invalid (HTTP 400): {msg}") from exc
     except (APIError, GroqError) as exc:
-        raise RuntimeError(f"Groq AI service encountered an error: {str(exc)}") from exc
+        _, msg = _extract_groq_error_detail(exc)
+        raise RuntimeError(f"Groq AI service encountered an error: {msg}") from exc
 
     if not response or not getattr(response, "choices", None) or len(response.choices) == 0:
         raise RuntimeError("Received an empty response from the AI service. Please try again.")
@@ -304,21 +333,21 @@ def _call_llm_resilient(
     user_prompt: str,
     temperature: float = 0.2,
     client: Groq | None = None,
-) -> tuple[str, str]:
+) -> tuple[str, str, bool]:
     """
     Execute LLM call using Gemini (Primary) with automatic fallback to Groq (Secondary).
-    Returns (response_text, model_name_used).
+    Returns (response_text, model_name_used, is_fallback).
     """
     # 1. If explicit client is provided (unit tests mocking Groq), use it directly
     if client is not None:
-        return _call_groq(system_prompt, user_prompt, temperature, client=client), settings.groq_model
+        return _call_groq(system_prompt, user_prompt, temperature, client=client), settings.groq_model, False
 
     # 2. Try Gemini 3.8 Flash as Primary if configured
     if settings.is_gemini_enabled:
         try:
             gemini_ans = _call_gemini(system_prompt, user_prompt, temperature=temperature)
             if gemini_ans:
-                return gemini_ans, settings.gemini_model
+                return gemini_ans, settings.gemini_model, False
         except Exception as exc:
             logger.warning(
                 "Primary model (%s) failed: %s. Falling back to Groq (%s).",
@@ -326,9 +355,11 @@ def _call_llm_resilient(
                 exc,
                 settings.groq_model,
             )
+            # Fallback was activated
+            return _call_groq(system_prompt, user_prompt, temperature, client=None), settings.groq_model, True
 
     # 3. Fallback / Default: Groq
-    return _call_groq(system_prompt, user_prompt, temperature, client=None), settings.groq_model
+    return _call_groq(system_prompt, user_prompt, temperature, client=None), settings.groq_model, False
 
 
 def generate_insights(
@@ -348,7 +379,7 @@ def generate_insights(
     prompt = format_analysis_for_llm(analysis_data)
     user_message = f"Please explain and synthesize these dataset analysis results:\n\n{prompt}"
 
-    insights, used_model = _call_llm_resilient(
+    insights, used_model, is_fallback = _call_llm_resilient(
         system_prompt=SYSTEM_PROMPT,
         user_prompt=user_message,
         temperature=0.3,
@@ -359,11 +390,13 @@ def generate_insights(
     if not insights or not insights.strip():
         insights = _generate_grounded_fallback_insights(analysis_data)
         used_model = "grounded-fallback"
+        is_fallback = True
 
     return {
         "status": "success",
         "insights": insights,
         "model": used_model,
+        "is_fallback": is_fallback,
     }
 
 
@@ -528,7 +561,7 @@ def generate_rag_answer(
         "Answer strictly based on the context excerpts above:"
     )
 
-    answer_text, used_model = _call_llm_resilient(
+    answer_text, used_model, is_fallback = _call_llm_resilient(
         system_prompt=RAG_SYSTEM_PROMPT,
         user_prompt=user_content,
         temperature=0.1,
@@ -542,4 +575,5 @@ def generate_rag_answer(
         "answer": answer_text,
         "sources": sources,
         "model": used_model,
+        "is_fallback": is_fallback,
     }

@@ -2,6 +2,7 @@
 main.py - DataLens AI FastAPI application entry point.
 """
 
+from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,43 +15,56 @@ from app.db import models
 
 logger = logging.getLogger("datalens.main")
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
 
-# Backward-compatibility column migration for existing tables
-try:
-    from sqlalchemy import inspect, text
-    with engine.connect() as conn:
-        inspector = inspect(engine)
-        if "documents" in inspector.get_table_names():
-            cols = [c["name"] for c in inspector.get_columns("documents")]
-            if "user_id" not in cols:
-                conn.execute(text("ALTER TABLE documents ADD COLUMN user_id INTEGER;"))
-                conn.commit()
-        if "chat_messages" in inspector.get_table_names():
-            cols = [c["name"] for c in inspector.get_columns("chat_messages")]
-            if "user_id" not in cols:
-                conn.execute(text("ALTER TABLE chat_messages ADD COLUMN user_id INTEGER;"))
-                conn.commit()
-        if "documents" in inspector.get_table_names():
-            cols = [c["name"] for c in inspector.get_columns("documents")]
-            if "ai_insights" not in cols:
-                conn.execute(text("ALTER TABLE documents ADD COLUMN ai_insights TEXT;"))
-                conn.commit()
-except Exception:
-    pass
+def init_db(target_engine=None):
+    """Create database tables and run backward-compatibility column migrations."""
+    db_engine = target_engine or engine
+    Base.metadata.create_all(bind=db_engine)
+    try:
+        from sqlalchemy import inspect, text
+        with db_engine.connect() as conn:
+            inspector = inspect(db_engine)
+            if "documents" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("documents")]
+                if "user_id" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN user_id INTEGER;"))
+                    conn.commit()
+            if "chat_messages" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("chat_messages")]
+                if "user_id" not in cols:
+                    conn.execute(text("ALTER TABLE chat_messages ADD COLUMN user_id INTEGER;"))
+                    conn.commit()
+            if "documents" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("documents")]
+                if "ai_insights" not in cols:
+                    conn.execute(text("ALTER TABLE documents ADD COLUMN ai_insights TEXT;"))
+                    conn.commit()
+    except Exception as exc:
+        logger.warning("Database schema migration check warning: %s", exc)
 
-# Production safety validation
-for warning_msg in settings.validate_production_settings():
-    logger.warning("PRODUCTION CONFIG WARNING: %s", warning_msg)
-if settings.is_production and settings.jwt_secret_key == DEFAULT_DEV_JWT_SECRET:
-    logger.critical("SECURITY ALERT: Running in production with default JWT secret key! Set a secure JWT_SECRET_KEY.")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI application lifespan management for startup and shutdown events."""
+    # Production safety validation
+    for warning_msg in settings.validate_production_settings():
+        logger.warning("PRODUCTION CONFIG WARNING: %s", warning_msg)
+    if settings.is_production and settings.jwt_secret_key == DEFAULT_DEV_JWT_SECRET:
+        logger.critical("SECURITY ALERT: Running in production with default JWT secret key! Set a secure JWT_SECRET_KEY.")
+
+    # Initialize database on startup with current active engine (supports test_engine when patched)
+    import app.db.session as session_module
+    init_db(target_engine=session_module.engine)
+
+    yield
+
 
 # --- App instance ---
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="AI-Powered Data & Document Analysis API",
+    lifespan=lifespan,
 )
 
 # --- CORS ---

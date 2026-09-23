@@ -1,84 +1,88 @@
 import "./ResultsPlaceholder.css";
 
-const UPCOMING_FEATURES = [
-  { icon: "📊", label: "Data Overview", desc: "Summary statistics & schema" },
-  { icon: "💡", label: "Auto Insights", desc: "AI-detected patterns & trends" },
-  { icon: "📈", label: "Smart Charts",  desc: "3-4 relevant visualisations" },
-  { icon: "💬", label: "AI Q&A",        desc: "Ask questions about your data" },
-];
-
 export default function ResultsPlaceholder() {
   return (
-    <section className="results-placeholder" aria-label="Analysis results area">
-      {/* Header */}
-      <div className="results-placeholder__header">
-        <h2 className="results-placeholder__title">Analysis Results</h2>
-        <span className="results-placeholder__tag">Awaiting upload</span>
+    <section className="workspace-overview" aria-label="Analytical capabilities overview">
+      <div className="workspace-overview__header">
+        <div>
+          <h2 className="workspace-overview__title">Workspace Capabilities</h2>
+          <p className="workspace-overview__subtitle">
+            Outputs generated automatically when a spreadsheet or reference document is loaded.
+          </p>
+        </div>
+        <span className="workspace-overview__status">Awaiting Upload</span>
       </div>
 
-      {/* 1. Four Feature Cards in 2x2 Grid */}
-      <div className="results-placeholder__grid" role="list">
-        {UPCOMING_FEATURES.map(({ icon, label, desc }) => (
-          <div key={label} className="feature-card" role="listitem">
-            <span className="feature-card__icon" aria-hidden="true">{icon}</span>
-            <div className="feature-card__body">
-              <p className="feature-card__label">{label}</p>
-              <p className="feature-card__desc">{desc}</p>
+      <div className="workspace-overview__grid">
+        {/* Capability 1: Spreadsheet Analysis */}
+        <div className="capability-card">
+          <div className="capability-card__header">
+            <div className="capability-card__icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="20" x2="18" y2="10" />
+                <line x1="12" y1="20" x2="12" y2="4" />
+                <line x1="6" y1="20" x2="6" y2="14" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="capability-card__title">Spreadsheet Analytics</h3>
+              <p className="capability-card__meta">Statistical summaries and charts</p>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* 2. Two Lower Sections: Side-by-Side Equal Width */}
-      <div className="results-placeholder__tracks">
-        {/* Track 1: Automated Analytics */}
-        <div className="placeholder-track">
-          <div className="placeholder-track__header">
-            <span className="placeholder-track__pill placeholder-track__pill--tabular">CSV & XLSX</span>
-            <h3 className="placeholder-track__title">Automated Analytics</h3>
-          </div>
-          <ul className="placeholder-track__list">
+          <ul className="capability-card__list">
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Statistical Profiling:</strong> Mean, median, standard deviation, quantiles & category frequencies</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Data profiling:</strong> Dimension shapes, inferred column types, missing cell counts, and duplicate row detection.</span>
             </li>
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Data Quality Checks:</strong> Missing cell counts, duplicate row detection, and schema types</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Distribution metrics:</strong> Mean, median, standard deviation, minimum, maximum, and quantiles for numeric metrics.</span>
             </li>
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Dynamic Visualizations:</strong> Variance-ranked bar charts, trend lines, and scatter plots</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Visual charts:</strong> Variance-ranked bar charts, trend lines, histograms, and scatter plots generated from column distributions.</span>
             </li>
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Groq AI Insights:</strong> Grounded executive narrative highlighting patterns, correlations & anomalies</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Executive narrative:</strong> Structured summary synthesizing distribution skews, primary patterns, and anomalies.</span>
             </li>
           </ul>
         </div>
 
-        {/* Track 2: Grounded Document RAG */}
-        <div className="placeholder-track">
-          <div className="placeholder-track__header">
-            <span className="placeholder-track__pill placeholder-track__pill--doc">PDF & DOCX</span>
-            <h3 className="placeholder-track__title">Grounded Document RAG</h3>
+        {/* Capability 2: Document Q&A */}
+        <div className="capability-card">
+          <div className="capability-card__header">
+            <div className="capability-card__icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="capability-card__title">Document Search &amp; Q&amp;A</h3>
+              <p className="capability-card__meta">Grounded answers with citations</p>
+            </div>
           </div>
-          <ul className="placeholder-track__list">
+
+          <ul className="capability-card__list">
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Deep Text Extraction:</strong> Multi-page parsing preserving paragraph structure & tables</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Structure extraction:</strong> Multi-page text parsing that preserves section headings, paragraph boundaries, and tables.</span>
             </li>
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Semantic Vector Indexing:</strong> Overlapping chunk embeddings indexed in-memory</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>In-memory vector retrieval:</strong> Overlapping semantic chunks indexed for fast similarity matching against your specific questions.</span>
             </li>
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Document AI Chat:</strong> Ask broad summaries, key findings, or specific detailed questions</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Contextual answers:</strong> Formulates direct responses strictly anchored to extracted document context with zero speculation.</span>
             </li>
             <li>
-              <span className="placeholder-track__bullet">✓</span>
-              <span><strong>Verified Citations:</strong> Answers cite exact page and paragraph sources with expandable text</span>
+              <span className="capability-card__bullet" aria-hidden="true">&bull;</span>
+              <span><strong>Verified citations:</strong> Every response references exact page numbers and paragraph sources with expandable excerpts.</span>
             </li>
           </ul>
         </div>

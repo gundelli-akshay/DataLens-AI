@@ -7,25 +7,24 @@ import {
 } from "recharts";
 import "./ChartPanel.css";
 
-// ── Constants ─────────────────────────────────────────────────
-const H   = 260;   // chart height in pixels
+// Constants
+const H = 260; // chart height in pixels
 const CLR = {
-  bar:            "#6366f1",
-  barHover:       "#818cf8",
-  line:           "#22c55e",
-  scatter:        "#a78bfa",
-  histogram:      "#f59e0b",
-  histogramHover: "#fbbf24",
-  grid:           "rgba(255,255,255,0.06)",
-  axis:           "#475569",
+  bar:            "#0284c7",
+  barHover:       "#38bdf8",
+  line:           "#0d9488",
+  scatter:        "#2563eb",
+  histogram:      "#d97706",
+  histogramHover: "#f59e0b",
+  grid:           "#1e293b",
+  axis:           "#334155",
   tick:           "#64748b",
 };
 
-// ── Helpers ───────────────────────────────────────────────────
+// Helpers
 function fmt(v) {
-  if (v === null || v === undefined) return "—";
+  if (v === null || v === undefined) return "-";
   if (typeof v !== "number") return String(v);
-  // Compact thousands: 95000 → "95k", 1200000 → "1.2M"
   if (Math.abs(v) >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
   if (Math.abs(v) >= 1_000)     return `${(v / 1_000).toFixed(1)}k`;
   return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -38,7 +37,7 @@ function tickFmt(v) {
   return v;
 }
 
-// ── Custom tooltip ────────────────────────────────────────────
+// Custom tooltip
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
@@ -54,7 +53,7 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-// ── Bar chart card ─────────────────────────────────────────────
+// Bar chart card
 function BarCard({ chart }) {
   const longLabels = chart.data.some((d) => String(d.name).length > 8);
   return (
@@ -86,7 +85,7 @@ function BarCard({ chart }) {
             dataKey="value"
             name={chart.y_label}
             fill={CLR.bar}
-            radius={[5, 5, 0, 0]}
+            radius={[4, 4, 0, 0]}
             activeBar={{ fill: CLR.barHover }}
           />
         </BarChart>
@@ -95,12 +94,12 @@ function BarCard({ chart }) {
   );
 }
 
-// ── Line chart card ────────────────────────────────────────────
+// Line chart card
 function LineCard({ chart }) {
   return (
     <div className="cp-card" aria-label={chart.title}>
       <p className="cp-card__title">{chart.title}</p>
-      <p className="cp-card__subtitle">{chart.y_label} &mdash; grouped by {chart.x_label}</p>
+      <p className="cp-card__subtitle">{chart.y_label} &middot; grouped by {chart.x_label}</p>
       <ResponsiveContainer width="100%" height={H}>
         <LineChart
           data={chart.data}
@@ -124,9 +123,9 @@ function LineCard({ chart }) {
             dataKey="value"
             name={chart.y_label}
             stroke={CLR.line}
-            strokeWidth={2.5}
-            dot={{ r: 4, fill: CLR.line, stroke: "none" }}
-            activeDot={{ r: 6, stroke: "rgba(34,197,94,0.4)", strokeWidth: 3 }}
+            strokeWidth={2}
+            dot={{ r: 3, fill: CLR.line, stroke: "none" }}
+            activeDot={{ r: 5, stroke: "rgba(13,148,136,0.4)", strokeWidth: 3 }}
           />
         </LineChart>
       </ResponsiveContainer>
@@ -134,13 +133,13 @@ function LineCard({ chart }) {
   );
 }
 
-// ── Scatter chart card ─────────────────────────────────────────
+// Scatter chart card
 function ScatterCard({ chart }) {
   return (
     <div className="cp-card" aria-label={chart.title}>
       <p className="cp-card__title">{chart.title}</p>
       <p className="cp-card__subtitle">
-        {chart.x_label} &times; {chart.y_label} &mdash; {chart.data.length} points
+        {chart.x_label} &times; {chart.y_label} &middot; {chart.data.length} points
       </p>
       <ResponsiveContainer width="100%" height={H}>
         <ScatterChart margin={{ top: 8, right: 16, left: 4, bottom: 24 }}>
@@ -188,21 +187,20 @@ function ScatterCard({ chart }) {
               );
             }}
           />
-          <Scatter data={chart.data} fill={CLR.scatter} opacity={0.7} />
+          <Scatter data={chart.data} fill={CLR.scatter} opacity={0.75} />
         </ScatterChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-// ── Chart type badge ───────────────────────────────────────────
-// ─── Histogram chart card ────────────────────────────────────────────────────
+// Histogram chart card
 function HistogramCard({ chart }) {
   const longLabels = chart.data.some((d) => String(d.name).length > 8);
   return (
     <div className="cp-card" aria-label={chart.title}>
       <p className="cp-card__title">{chart.title}</p>
-      <p className="cp-card__subtitle">{chart.y_label} &mdash; {chart.x_label}</p>
+      <p className="cp-card__subtitle">{chart.y_label} &middot; {chart.x_label}</p>
       <ResponsiveContainer width="100%" height={H}>
         <BarChart
           data={chart.data}
@@ -228,7 +226,7 @@ function HistogramCard({ chart }) {
             dataKey="value"
             name={chart.y_label}
             fill={CLR.histogram}
-            radius={[5, 5, 0, 0]}
+            radius={[4, 4, 0, 0]}
             activeBar={{ fill: CLR.histogramHover }}
           />
         </BarChart>
@@ -237,17 +235,17 @@ function HistogramCard({ chart }) {
   );
 }
 
-// ─── Chart type badge ────────────────────────────────────────────────────────
+// Chart type badge label
 const TYPE_LABEL = { bar: "Bar", line: "Line", scatter: "Scatter", histogram: "Histogram" };
 
-// ── Main export ────────────────────────────────────────────────
+// Main export
 export default function ChartPanel({ charts }) {
   if (!charts?.length) return null;
 
   return (
     <section className="cp" aria-label="Auto-generated charts">
       <div className="cp-header">
-        <h3 className="cp-header__title">Charts</h3>
+        <h3 className="cp-header__title">Visualizations</h3>
         <div className="cp-header__tags">
           {charts.map((c, i) => (
             <span key={i} className={`cp-tag cp-tag--${c.type}`}>

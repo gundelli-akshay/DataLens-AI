@@ -7,8 +7,11 @@ import React from "react";
  * - *italic* or _italic_
  * - `inline code`
  * - [Hypothesis] and [Unverified Assumption] analytical tags
+ * - (Page X), (Paragraph Y), Page X, Paragraph Y citations
  */
-export const INLINE_TOKEN_REGEX = /(\*\*\*(?!\s)[^*\n\r]+?(?<!\s)\*\*\*|___(?!\s)[^_\n\r]+?(?<!\s)___|\*\*(?!\s)[^*\n\r]+?(?<!\s)\*\*|__(?!\s)[^_\n\r]+?(?<!\s)__|(?<!\*)\*(?!\s|\*)[^*\n\r]+?(?<!\s|\*)\*(?!\*)|(?<!_)_(?!\s|_)[^_\n\r]+?(?<!\s|_)_(?!_)|`[^`\n\r]+`|\[Hypothesis\]|\[Unverified Assumption\])/g;
+export const INLINE_TOKEN_REGEX = /(\*{3}(?!\s)[^*\n\r]+?(?<!\s)\*{3}|_{3}(?!\s)[^_\n\r]+?(?<!\s)_{3}|\*{2}(?!\s)[^*\n\r]+?(?<!\s)\*{2}|_{2}(?!\s)[^_\n\r]+?(?<!\s)_{2}|(?<!\*)\*(?!\s|\*)[^*\n\r]+?(?<!\s|\*)\*(?!\*)|(?<!_)_(?!\s|_)[^_\n\r]+?(?<!\s|_)_(?!_)|`[^`\n\r]+`|\[Hypothesis\]|\[Unverified Assumption\]|\((?:Page|Paragraph)\s+\d+(?:-\d+)?\)|\[(?:Page|Paragraph)\s+\d+(?:-\d+)?\]|\b(?:Page|Paragraph)\s+\d+(?:-\d+)?\b)/gi;
+
+const CITATION_TOKEN_REGEX = /^(?:\((?:Page|Paragraph)\s+\d+(?:-\d+)?\)|\[(?:Page|Paragraph)\s+\d+(?:-\d+)?\]|(?:Page|Paragraph)\s+\d+(?:-\d+)?)$/i;
 
 export function renderInlineMarkdown(text) {
   if (!text) return "";
@@ -43,6 +46,13 @@ export function renderInlineMarkdown(text) {
       return (
         <span key={i} className="ai-badge-assumption" title="Unverified domain assumption">
           Unverified Assumption
+        </span>
+      );
+    }
+    if (CITATION_TOKEN_REGEX.test(part.trim())) {
+      return (
+        <span key={i} className="ai-citation-inline" title="Verified source location">
+          {part}
         </span>
       );
     }
