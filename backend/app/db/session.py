@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.core.config import settings
@@ -43,13 +43,27 @@ def normalize_database_url(url: str | None) -> str:
 
 def get_engine_args(url: str) -> dict:
     """
-    Return PostgreSQL engine connection options with connection pooling, recycling, and pre-ping.
+    Return PostgreSQL engine connection options.
+
+    Tuned for Supabase Supavisor (transaction-mode pooler):
+    - pool_pre_ping: validates a connection before handing it to a request,
+      so stale/banned connections are discarded immediately.
+    - pool_recycle: forces a connection refresh every 5 minutes to prevent
+      Supavisor from closing idle connections mid-session.
+    - pool_size / max_overflow: kept conservative for Render's free-tier
+      (512 MB RAM) and Supabase's free connection limit.
+    - connect_args timeout: fail fast if Supavisor is unreachable rather
+      than blocking the startup thread for 30+ seconds.
     """
     return {
         "pool_pre_ping": True,
-        "pool_recycle": 300,
-        "pool_size": 5,
-        "max_overflow": 10,
+        "pool_recycle": 280,        # slightly under Supavisor's 300-s idle timeout
+        "pool_size": 3,             # keep footprint small on Render free tier
+        "max_overflow": 5,
+        "pool_timeout": 30,         # give up waiting for a pool slot after 30 s
+        "connect_args": {
+            "connect_timeout": 10,  # TCP connect timeout (seconds)
+        },
     }
 
 
