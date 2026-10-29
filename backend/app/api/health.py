@@ -1,12 +1,18 @@
 """
 api/health.py - Health check endpoint.
 
-Separated from main.py so that as the project grows,
-each feature area has its own router file.
+Always returns HTTP 200 so that:
+  - The frontend health-check never shows "API Offline" just because the
+    database had a transient hiccup on startup.
+  - Render's HTTP health-check probe keeps the container alive even when
+    Supabase is temporarily unreachable (the container itself is healthy).
+
+The JSON body carries a "database" field so dashboards / logs can distinguish
+a fully-healthy response from a degraded-but-running one without treating the
+API as down.
 """
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
 
 router = APIRouter(tags=["Health"])
 
@@ -14,13 +20,12 @@ router = APIRouter(tags=["Health"])
 @router.get("/health")
 def health_check(request: Request):
     """
-    Returns the current health status of the API and its database connection.
+    Returns HTTP 200 in all cases where the API process is running.
 
-    HTTP 200  - API is up; database initialised successfully.
-    HTTP 503  - API is up but database is not yet reachable.
-                Render/load-balancer health checks will see this as unhealthy
-                and restart the container, rather than routing traffic to a
-                broken instance.
+    JSON body:
+      status   : "ok" | "degraded"
+      database : "connected" | "unavailable"
+      message  : human-readable summary
     """
     db_ready = getattr(request.app.state, "db_ready", lambda: True)()
     db_error = getattr(request.app.state, "db_error", lambda: "")()
@@ -32,12 +37,11 @@ def health_check(request: Request):
             "message": "DataLens AI API is healthy",
         }
 
-    return JSONResponse(
-        status_code=503,
-        content={
-            "status": "degraded",
-            "database": "unavailable",
-            "message": "DataLens AI API is running but the database is not reachable.",
-            "detail": db_error or "Database init failed.",
-        },
-    )
+    # API process is running fine — only the DB is temporarily unavailable.
+    # Return 200 so the frontend shows "API Online" and Render does not restart.
+    return {
+        "status": "degraded",
+        "database": "unavailable",
+        "message": "DataLens AI API is running. Database connection is temporarily unavailable.",
+        "detail": db_error or "Database init failed.",
+    }
